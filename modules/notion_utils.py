@@ -96,6 +96,15 @@ def build_notion_page_properties(record: Dict[str, Any]) -> Dict[str, Any]:
     
     if "KeyFindings" in record and record["KeyFindings"]:
         props["KeyFindings"] = {"rich_text": [{"text": {"content": truncate_for_notion(record["KeyFindings"])}}]}
+
+    if "PaperRole" in record and record["PaperRole"]:
+        props["PaperRole"] = {"rich_text": [{"text": {"content": truncate_for_notion(record["PaperRole"])}}]}
+
+    if "Theme" in record and record["Theme"]:
+        # Theme is multi-select
+        theme_list = [t.strip().replace(",", " -") for t in record["Theme"].replace(";", ",").split(",") if t.strip()]
+        if theme_list:
+            props["Theme"] = {"multi_select": [{"name": t} for t in theme_list]}
     
     if "DataTypes" in record and record["DataTypes"]:
         data_types_list = [t.strip().replace(",", " -") for t in record["DataTypes"].replace(";", ",").split(",") if t.strip()]

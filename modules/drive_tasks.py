@@ -76,7 +76,7 @@ def archive_to_drive(enriched_records: List[Dict[str, Any]], cfg: Dict[str, Any]
         # Logic: Score >= 90 OR (Score >= 80 AND Confidence == High)
         # Using User's logic: Score >= 85 (simple threshold from initial request, updated to 90 later)
         # Let's stick to a robust threshold: Score >= 85
-        if score >= 85:
+        if score >= 90:
             high_conf_text_buffer.append(md_text)
             
     # Append to Quarterly File
@@ -105,10 +105,13 @@ def _format_markdown_entry(rec: Dict[str, Any]) -> str:
     lines.append("---") 
     lines.append(f"## PMID: {rec.get('PMID')} — {rec.get('Journal', 'Unknown Journal')} ({rec.get('PubDate', 'N/A')})")
     lines.append(f"**Title**: {rec.get('Title', 'Untitled')}")
+    lines.append(f"**Group**: {rec.get('Group', '')}")
     lines.append(f"**RelevanceScore**: {rec.get('RelevanceScore')}")
     lines.append(f"**PipelineConfidence**: {rec.get('PipelineConfidence', 'N/A')}")
     lines.append(f"**FullTextUsed**: {'Yes' if rec.get('FullTextUsed') else 'No'}")
-    lines.append(f"**Group**: {rec.get('Group', '')}")
+    lines.append("")
+    lines.append(f"**PaperRole**: {rec.get('PaperRole', '')}")
+    lines.append(f"**Theme**: {rec.get('Theme', '')}")
     lines.append("")
     lines.append("### WhyRelevant")
     lines.append(rec.get("WhyRelevant", ""))
@@ -117,9 +120,20 @@ def _format_markdown_entry(rec: Dict[str, Any]) -> str:
     lines.append(rec.get("StudySummary", ""))
     lines.append("")
     lines.append("### Methods")
-    lines.append(rec.get("Methods", ""))
+    methods = rec.get("Methods", "")
+    # Format Methods as bullets if they aren't already
+    if ";" in methods or "," in methods:
+        # Prefer semicolon splitting
+        splitter = ";" if ";" in methods else ","
+        for m in methods.split(splitter):
+            if m.strip():
+                lines.append(f"- {m.strip()}")
+    elif methods:
+        lines.append(f"- {methods}")
+    else:
+        lines.append("")
     lines.append("")
-    lines.append("### Key Findings")
+    lines.append("### KeyFindings")
     findings = rec.get("KeyFindings", "")
     if ";" in findings:
         for f in findings.split(";"):
@@ -128,7 +142,7 @@ def _format_markdown_entry(rec: Dict[str, Any]) -> str:
     else:
         lines.append(findings)
     lines.append("")
-    lines.append("### Data Types")
+    lines.append("### DataTypes")
     lines.append(rec.get("DataTypes", ""))
     
     return "\n".join(lines)

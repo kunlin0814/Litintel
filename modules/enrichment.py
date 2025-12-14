@@ -2,7 +2,7 @@ import os
 import time
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from google.api_core.exceptions import ResourceExhausted
 
 import google.generativeai as genai
@@ -33,15 +33,43 @@ SYSTEM_INSTRUCTION = (
     "- For non-prostate cancers, assign ≥75 only if ≥3 relevant technologies are clearly used.\\n\\n"
     "WhyRelevant: 1 sentence explaining the score.\\n"
     "StudySummary: 2–3 sentences (aim, system/cohort, main result).\\n"
+    "PaperRole: 1 sentence explaining the paper's role in the field (e.g. 'Core framework paper', 'Incremental method improvement').\\n"
+    "Theme: Semi-colon separated controlled tags (e.g. 'Spatial lineage; Epigenetic heterogeneity; CNV inference').\\n"
     "Methods: Experimental platforms + computational tools if stated.\\n"
     "KeyFindings: Concise bullet-like points in a single string separated by ';'.\\n"
     "DataTypes: Comma-separated assays; use controlled vocabulary when possible; empty string if not reported.\\n"
-    "Group: The 'Principal Investigator' or 'Lab Name'. Logic:\\n"
-    "  1. If full text is provided, look for the 'Corresponding Author' or 'Correspondence to' section.\\n"
-    "  2. If valid corresponding author found, use their Name (e.g. 'John Doe') or Lab Name (e.g. 'Doe Lab').\\n"
-    "  3. If NO full text or NO corresponding author found, strictly use the LAST author from the provided Author list.\\n\\n"
+    "Group: The 'Principal Investigator' or 'Lab Name' (e.g. 'Charles Lab', 'Doe Lab'). Strictly PI identity.\\n"
+    "  1. Look for 'Corresponding Author' or 'Correspondence to'.\\n"
+    "  2. Use Name or Lab Name.\\n"
+    "  3. If 'Correspondence to' is not present, strictly use the LAST author from the provided Author list.\\n"
+    "  4. If NO authors listed, use empty string.\\n\\n"
     "Missing info → empty string. No fabrication. Output compact JSON only."
 )
+
+# Global model cache
+_GEMINI_MODEL = None
+
+
+def _extract_last_author(authors_str: str) -> str:
+    """Extract last author from author list for Group fallback."""
+    if not authors_str or authors_str == "No authors listed":
+        return ""
+    # Split by common delimiters
+    parts = authors_str.replace(" and ", ", ").split(", ")
+    if parts:
+        # Get last author, clean up common suffixes
+        last = parts[-1].strip()
+        # Remove common patterns like "et al."
+        if "et al" in last.lower():
+            # If there's "et al.", use the previous author if available
+            # Otherwise extract the part before "et al."
+            if len(parts) > 1:
+                last = parts[-2].strip()
+            else:
+                # Single element like "Smith J et al."
+                last = last.split("et al")[0].strip()
+        return last
+    return ""
 
 
 def _extract_json_text(resp: Any) -> str:
@@ -83,18 +111,17 @@ def _load_response_json(raw: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         pass
 
-    # Try to salvage the first complete JSON object via regex (best-effort)
-    try:
-        match = re.search(r"\{.*?\}", raw, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        pass
+    # DANGEROUS REGEX REMOVED per valid feedback.
+    # It was capturing inner objects ({...}) instead of the full JSON.
+    # We rely on the brace-balancer below.
 
-    # If that fails, try to find and extract just the JSON structure
+    # Improved: try to find and extract just the JSON structure
     # Look for balanced braces
+    # Prefer starting at a proper JSON object (not arbitrary text with braces)
     brace_count = 0
-    start_idx = raw.find('{')
+    start_idx = raw.find('{"RelevanceScore"')
+    if start_idx == -1:
+        start_idx = raw.find('{')
     if start_idx != -1:
         for i in range(start_idx, len(raw)):
             if raw[i] == '{':
@@ -144,41 +171,48 @@ def _load_response_json(raw: str) -> Dict[str, Any]:
     raise ValueError(f"Could not parse JSON from response. Raw (first 500 chars): {raw[:500]}")
 
 
-def _call_gemini_api(user_prompt: str, logger) -> Dict[str, Any]:
+def _call_gemini_api(user_prompt: str, logger) -> Tuple[Dict[str, Any], int]:
     """Call Gemini API and return parsed JSON response."""
-    response_schema = {
-        "type": "OBJECT",
-        "properties": {
-            "RelevanceScore": {"type": "INTEGER"},
-            "WhyRelevant": {"type": "STRING"},
-            "StudySummary": {"type": "STRING"},
-            "Methods": {"type": "STRING"},
-            "KeyFindings": {"type": "STRING"},
-            "DataTypes": {"type": "STRING"},
-            "Group": {"type": "STRING"},
-        },
-        "required": [
-            "RelevanceScore",
-            "WhyRelevant",
-            "StudySummary",
-            "Methods",
-            "KeyFindings",
-            "DataTypes",
-            "Group",
-        ],
-    }
+    global _GEMINI_MODEL
     
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=SYSTEM_INSTRUCTION,
-        generation_config={
-            "temperature": 0.1,
-            "response_mime_type": "application/json",
-            "response_schema": response_schema,
-        },
-    )
+    if _GEMINI_MODEL is None:
+        response_schema = {
+            "type": "OBJECT",
+            "properties": {
+                "RelevanceScore": {"type": "INTEGER"},
+                "WhyRelevant": {"type": "STRING"},
+                "StudySummary": {"type": "STRING"},
+                "PaperRole": {"type": "STRING"},
+                "Theme": {"type": "STRING"},
+                "Methods": {"type": "STRING"},
+                "KeyFindings": {"type": "STRING"},
+                "DataTypes": {"type": "STRING"},
+                "Group": {"type": "STRING"},
+            },
+            "required": [
+                "RelevanceScore",
+                "WhyRelevant",
+                "StudySummary",
+                "PaperRole",
+                "Theme",
+                "Methods",
+                "KeyFindings",
+                "DataTypes",
+                "Group",
+            ],
+        }
+        
+        _GEMINI_MODEL = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            system_instruction=SYSTEM_INSTRUCTION,
+            generation_config={
+                "temperature": 0.1,
+                "response_mime_type": "application/json",
+                "response_schema": response_schema,
+            },
+        )
     
-    resp = model.generate_content(user_prompt)
+    resp = _GEMINI_MODEL.generate_content(user_prompt)
     raw_json = _extract_json_text(resp)
     
     # Estimate output tokens
@@ -187,7 +221,7 @@ def _call_gemini_api(user_prompt: str, logger) -> Dict[str, Any]:
     return _load_response_json(raw_json), estimated_output_tokens
 
 
-def _call_openai_api(user_prompt: str, logger, model_name: str = "gpt-5-nano") -> Dict[str, Any]:
+def _call_openai_api(user_prompt: str, logger, model_name: str = "gpt-5-nano") -> Tuple[Dict[str, Any], int]:
     """Call OpenAI Chat Completions API with strict schema enforcement."""
     # Use module-level client (reused across all calls)
     if _OPENAI_CLIENT is None:
@@ -212,6 +246,14 @@ def _call_openai_api(user_prompt: str, logger, model_name: str = "gpt-5-nano") -
                     "type": "string",
                     "description": "2-3 sentences about aim, system/cohort, main result"
                 },
+                "PaperRole": {
+                    "type": "string",
+                    "description": "1 sentence conceptual summary of role"
+                },
+                "Theme": {
+                    "type": "string",
+                    "description": "Semi-colon separated controlled topic tags"
+                },
                 "Methods": {
                     "type": "string",
                     "description": "Experimental platforms and computational tools"
@@ -233,6 +275,8 @@ def _call_openai_api(user_prompt: str, logger, model_name: str = "gpt-5-nano") -
                 "RelevanceScore",
                 "WhyRelevant",
                 "StudySummary",
+                "PaperRole",
+                "Theme",
                 "Methods",
                 "KeyFindings",
                 "DataTypes",
@@ -340,9 +384,20 @@ def ai_enrich_records(
         full_text_entry = pmc_fulltext_map.get(pmid)
         full_text_used = False
         if full_text_entry and full_text_entry.get("full_text"):
+            # TEXT CAPPING: Prevent massive cost blowouts
+            raw_full_text = full_text_entry["full_text"]
+            MAX_CHARS = int(cfg.get("AI_MAX_CHARS", 80000))
+            if len(raw_full_text) > MAX_CHARS:
+                # Smart truncation: keep first half + last half
+                # This captures intro AND methods/data availability
+                half = MAX_CHARS // 2
+                head = raw_full_text[:half]
+                tail = raw_full_text[-half:]
+                raw_full_text = head + "\n...[MIDDLE TRUNCATED]...\n" + tail
+            
             text_to_analyze = (
                 "Analysis based on Full Text (Abstract + Methods + Results + Data/Code Availability):\\n\\n"
-                + full_text_entry["full_text"]
+                + raw_full_text
             )
             full_text_used = True
         else:
@@ -354,13 +409,15 @@ def ai_enrich_records(
 
         # Add Authors to the prompt context
         authors_str = rec.get("Authors", "") or "No authors listed"
+        last_author = _extract_last_author(authors_str)
         
         user_prompt = (
         f"You will be given text associated with a scientific paper for PMID {pmid}.\\n"
         "Carefully read it and then fill the JSON fields exactly as specified in your system instructions.\\n"
         f"The authors listed for this paper are: {authors_str}\\n"
-        "Carefully read the text and then fill the JSON fields exactly as specified in your system instructions.\\n"
-        "Return ONLY the JSON object and nothing else.\\n\\n"
+        f"GroupFallbackCandidate: {last_author if last_author else 'Not available'}\\n"
+        "If no correspondence information is present, set Group exactly to the GroupFallbackCandidate value above.\\n"
+        "Return ONLY the JSON object and nothing else.\\n\\n\\n"
         "TEXT_START\\n"
         f"{text_to_analyze}\\n"
         "TEXT_END"
@@ -378,6 +435,7 @@ def ai_enrich_records(
             f"(~{tokens_per_minute:,.0f} TPM)"
         )
         
+        parsed = {} # Ensure parsed is defined
         try:
             # Route to the appropriate provider with Escalation Logic
             if provider == "gemini":
@@ -401,33 +459,67 @@ def ai_enrich_records(
                         needs_escalation = True
                         
                     if needs_escalation:
-                         # Try 2: Escalation Model (Mini)
-                         logger.info(f"Escalating PMID {pmid} to {ESCALATION_MODEL} for better reasoning...")
-                         parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
-                         
-                except Exception as e:
-                    # If Nano fails completely (e.g. JSON error), try Escalation Model
-                    logger.warning(f"PMID {pmid}: Failed with {DEFAULT_MODEL} ({e}). Escalating to {ESCALATION_MODEL}...")
-                    parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                        # Try 2: Escalation Model (Mini)
+                        logger.info(f"Escalating PMID {pmid} to {ESCALATION_MODEL} for better reasoning...")
+                        parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                        
+                except Exception as e_nano:
+                    # Check if it's an OpenAI rate limit (429)
+                    error_str = str(e_nano).lower()
+                    if "429" in error_str or "rate limit" in error_str:
+                        logger.warning(f"PMID {pmid}: Rate limit with {DEFAULT_MODEL}. Retrying with backoff...")
+                        # Simple retry with backoff
+                        for retry in range(3):
+                            wait_time = 2 ** retry  # 1s, 2s, 4s
+                            time.sleep(wait_time)
+                            try:
+                                parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=DEFAULT_MODEL)
+                                logger.info(f"PMID {pmid}: Retry {retry+1} succeeded.")
+                                break
+                            except Exception as e_retry:
+                                if retry == 2:  # Last retry
+                                    logger.warning(f"PMID {pmid}: All retries failed. Escalating to {ESCALATION_MODEL}...")
+                                    parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                    else:
+                        # Other errors: escalate to better model
+                        logger.warning(f"PMID {pmid}: Failed with {DEFAULT_MODEL} ({e_nano}). Escalating to {ESCALATION_MODEL}...")
+                        parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
 
             total_output_tokens += output_tokens
             
         except ResourceExhausted as e:
-            # Extract quota error details if available
+            # Gemini specific hard-stop
             error_details = str(e)
             logger.error(
                 f"{provider.upper()} QUOTA EXCEEDED for PMID={pmid}\n"
                 f"Error Details: {error_details}\n"
-                f"Current Usage: {total_input_tokens:,} input tokens + {total_output_tokens:,} output tokens\n"
-                f"Time Elapsed: {elapsed_minutes:.2f} minutes ({tokens_per_minute:,.0f} tokens/min)\n"
-                f"Likely Cause: {'TPM limit (1M tokens/min)' if tokens_per_minute > 900000 else 'Daily quota or other limit'}\n"
                 f"STOPPING pipeline to prevent Notion database corruption."
             )
-            raise  # Re-raise to stop the flow
+            raise e 
             
-        # NOTE: We deliberately removed the generic 'except Exception' block here.
-        # We WANT the pipeline to crash if there's a JSON parsing error or API error,
-        # so that we don't write bad/empty data to Notion.
+        except Exception as e:
+            # RESILIENT ERROR HANDLING (OpenAI or Gemini misc errors)
+            # Instead of crashing, mark this record as failed so Notion task can skip or flag it.
+            logger.error(f"Enrichment FAILED for PMID {pmid}: {e}")
+            parsed = {
+                "RelevanceScore": -1,
+                "WhyRelevant": f"AI enrichment failed: {str(e)}",
+                "PipelineConfidence": "Error"
+            }
+            # We continue to the next record...
+            
+        # NOTE: Previous "crash on error" policy removed.
+        
+        # SHORT-CIRCUIT: If enrichment failed, skip all processing and append error record
+        if parsed.get("RelevanceScore") == -1:
+            rec.update({
+                "RelevanceScore": -1,
+                "WhyRelevant": parsed.get("WhyRelevant", "Enrichment failed"),
+                "PipelineConfidence": "Error",
+                "FullTextUsed": full_text_used,
+            })
+            enriched.append(rec)
+            continue
 
         # If truncated-repair was needed, mark the title so it is easy to spot.
         if parsed.pop("__TRUNCATED__", False):
@@ -438,6 +530,8 @@ def ai_enrich_records(
         parsed.setdefault("RelevanceScore", 0)
         parsed.setdefault("WhyRelevant", "Analysis failed or returned empty.")
         parsed.setdefault("StudySummary", "")
+        parsed.setdefault("PaperRole", "")
+        parsed.setdefault("Theme", "")
         parsed.setdefault("Methods", "")
         parsed.setdefault("KeyFindings", "")
         parsed.setdefault("DataTypes", "")
@@ -462,8 +556,10 @@ def ai_enrich_records(
 
         relevance_score = parsed.get("RelevanceScore", 0)
         why_relevant = parsed.get("WhyRelevant", "")
+        wr = why_relevant.lower()
         if relevance_score == 0 and (
-            "relevant" in why_relevant.lower() and "no abstract" not in why_relevant.lower()
+            "not relevant" not in wr and "irrelevant" not in wr and 
+            "relevant" in wr and "no abstract" not in wr
         ):
             relevance_score = 50
             parsed["RelevanceScore"] = 50
@@ -501,6 +597,8 @@ def ai_enrich_records(
                 "RelevanceScore": relevance_score,
                 "WhyRelevant": parsed.get("WhyRelevant", ""),
                 "StudySummary": parsed.get("StudySummary", ""),
+                "PaperRole": parsed.get("PaperRole", ""),
+                "Theme": parsed.get("Theme", ""),
                 "Methods": parsed.get("Methods", ""),
                 "KeyFindings": parsed.get("KeyFindings", ""),
                 "DataTypes": parsed.get("DataTypes", ""),
