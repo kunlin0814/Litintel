@@ -43,6 +43,8 @@ SYSTEM_INSTRUCTION = (
     "  2. Use Name or Lab Name.\\n"
     "  3. If 'Correspondence to' is not present, strictly use the LAST author from the provided Author list.\\n"
     "  4. If NO authors listed, use empty string.\\n\\n"
+    "CellIdentitySignatures: Extract signatures explicitly used to define cell types/states (e.g. 'Basal: KRT5, KRT14; Luminal: KRT8, AR'). Empty if not reported.\\n"
+    "PerturbationsUsed: Semicolon-separated list of genetic/chemical manipulations (e.g. 'PTEN loss; Enzalutamide; ERG OE'). Empty if none.\\n\\n"
     "Missing info → empty string. No fabrication. Output compact JSON only."
 )
 
@@ -188,6 +190,8 @@ def _call_gemini_api(user_prompt: str, logger) -> Tuple[Dict[str, Any], int]:
                 "KeyFindings": {"type": "STRING"},
                 "DataTypes": {"type": "STRING"},
                 "Group": {"type": "STRING"},
+                "CellIdentitySignatures": {"type": "STRING"},
+                "PerturbationsUsed": {"type": "STRING"},
             },
             "required": [
                 "RelevanceScore",
@@ -199,6 +203,8 @@ def _call_gemini_api(user_prompt: str, logger) -> Tuple[Dict[str, Any], int]:
                 "KeyFindings",
                 "DataTypes",
                 "Group",
+                "CellIdentitySignatures",
+                "PerturbationsUsed",
             ],
         }
         
@@ -269,6 +275,14 @@ def _call_openai_api(user_prompt: str, logger, model_name: str = "gpt-5-nano") -
                 "Group": {
                     "type": "string",
                     "description": "Principal Investigator or Lab Name"
+                },
+                "CellIdentitySignatures": {
+                    "type": "string",
+                    "description": "Explicitly stated cell type markers"
+                },
+                "PerturbationsUsed": {
+                    "type": "string",
+                    "description": "Genetic or chemical manipulations"
                 }
             },
             "required": [
@@ -280,7 +294,9 @@ def _call_openai_api(user_prompt: str, logger, model_name: str = "gpt-5-nano") -
                 "Methods",
                 "KeyFindings",
                 "DataTypes",
-                "Group"
+                "Group",
+                "CellIdentitySignatures",
+                "PerturbationsUsed"
             ],
             "additionalProperties": False
         }
@@ -536,6 +552,8 @@ def ai_enrich_records(
         parsed.setdefault("KeyFindings", "")
         parsed.setdefault("DataTypes", "")
         parsed.setdefault("Group", "")
+        parsed.setdefault("CellIdentitySignatures", "")
+        parsed.setdefault("PerturbationsUsed", "")
 
         raw_types = [
             t.strip().lower()
@@ -603,6 +621,8 @@ def ai_enrich_records(
                 "KeyFindings": parsed.get("KeyFindings", ""),
                 "DataTypes": parsed.get("DataTypes", ""),
                 "Group": parsed.get("Group", ""),
+                "CellIdentitySignatures": parsed.get("CellIdentitySignatures", ""),
+                "PerturbationsUsed": parsed.get("PerturbationsUsed", ""),
                 "PipelineConfidence": confidence,
                 "FullTextUsed": full_text_used,
             }

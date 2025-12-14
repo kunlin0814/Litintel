@@ -106,6 +106,12 @@ def build_notion_page_properties(record: Dict[str, Any]) -> Dict[str, Any]:
         if theme_list:
             props["Theme"] = {"multi_select": [{"name": t} for t in theme_list]}
     
+    if "CellIdentitySignatures" in record and record["CellIdentitySignatures"]:
+        props["CellIdentitySignatures"] = {"rich_text": [{"text": {"content": truncate_for_notion(record["CellIdentitySignatures"])}}]}
+
+    if "PerturbationsUsed" in record and record["PerturbationsUsed"]:
+        props["PerturbationsUsed"] = {"rich_text": [{"text": {"content": truncate_for_notion(record["PerturbationsUsed"])}}]}
+
     if "DataTypes" in record and record["DataTypes"]:
         data_types_list = [t.strip().replace(",", " -") for t in record["DataTypes"].replace(";", ",").split(",") if t.strip()]
         if data_types_list:

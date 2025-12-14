@@ -1,0 +1,54 @@
+# Controlled Vocabulary for Literature Intelligence
+
+# Problem Areas (Canonical List)
+problem_areas:
+  - integration
+  - batch_correction
+  - cnv_inference
+  - spatial_mapping
+  - cell_type_annotation
+  - peak_gene_linking
+  - motif_enrichment
+  - trajectory_inference
+  - deconvolution
+  - image_alignment
+  - segmentation
+  - cell_cell_interaction
+  - spatially_variable_genes
+  - visualization
+  - multimodal_integration
+
+# Data Types (Canonical List)
+data_types:
+  - Visium
+  - Xenium
+  - CosMx
+  - GeoMx
+  - Slide-seq
+  - MERFISH
+  - STARmap
+  - snRNA-seq
+  - scRNA-seq
+  - scATAC-seq
+  - snATAC-seq
+  - Multiome
+  - Spatial-ATAC
+  - WGS
+  - WES
+  - Bulk RNA-seq
+  - ChIP-seq
+
+# Method Name Synonyms (Normalization Map)
+method_synonyms:
+  cell2location: Cell2location
+  cell2loc: Cell2location
+  seurat: Seurat
+  giotto: Giotto
+  squidpy: Squidpy
+  scanpy: Scanpy
+  archr: ArchR
+  signac: Signac
+  harmony: Harmony
+  liger: LIGER
+  scvi: scVI
+  scvi-tools: scVI-tools

@@ -1,0 +1,48 @@
+# Tier-2: Methods Discovery & Intelligence
+
+pipeline_tier: 2
+pipeline_name: "Methods_Discovery"
+
+discovery:
+  mode: MIXED  # AUTHOR_SEEDED | KEYWORD | MIXED
+  
+  seed_authors:
+    - "Rong Fan"
+    - "Luciano Martelotto"
+    - "Fei Chen"
+    - "Rahul Satija"
+    - "Dana Pe'er"
+    - "Fabian Theis"
+    - "Aviv Regev"
+    - "Xiaowei Zhuang"
+    - "Long Cai"
+    - "Joakim Lundeberg"
+
+  keyword_queries:
+    - '("spatial transcriptomics"[Title/Abstract] AND "method"[Title/Abstract])'
+    - '("single-cell"[Title/Abstract] AND "integration"[Title/Abstract] AND "benchmark"[Title/Abstract])'
+    - '("deconvolution"[Title] AND "spatial"[Title])'
+
+  retmax: 100
+  reldays: 365
+
+ai:
+  provider: openai
+  model_default: "gpt-5-nano"
+  model_escalate: "gpt-5-mini"
+  max_chars: 80000
+  prompt_template: "tier2_methods"
+
+storage:
+  notion:
+    enabled: true
+    database_id_env: "NOTION_METHODS_DB_ID" # Needs new DB
+  markdown_bundle:
+    enabled: true
+    output_dir: "output/bundles"
+  csv:
+    enabled: true
+    filename: "papers_tier2.csv"
+
+dedup:
+  keys: ["DOI", "PMID"]
