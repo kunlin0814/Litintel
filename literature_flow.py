@@ -27,6 +27,7 @@ from modules.notion_tasks import (
     notion_create_pages,
     notion_update_pages,
 )
+from modules.drive_tasks import archive_to_drive
 from modules.run_log import append_run_log
 
 
@@ -201,10 +202,16 @@ def literature_search_flow(
             # CHANGED: Create ALL pages, even low relevance, to prevent infinite loop of re-processing.
             logger.info(f"AI enrichment -> {len(enriched_new)} records processed. Creating all in Notion.")
             create_res = notion_create_pages(cfg, enriched_new)
+
+            # 7b. Drive Archive (NotebookLM + Agents)
+            logger.info(f"Archiving {len(enriched_new)} records to Google Drive...")
+            archive_to_drive(enriched_new, cfg)
             
         except ResourceExhausted:
             logger.critical("AI quota exceeded during enrichment. Stopping flow immediately to avoid saving partial/error data.")
             return
+            
+
     else:
         create_res = {"created": 0}
 

@@ -128,6 +128,8 @@ def get_config(
         "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
         "GOOGLE_API_KEY": os.environ.get("GOOGLE_API_KEY", ""),
         "RUN_LOG_PATH": os.environ.get("RUN_LOG_PATH", "run_history.csv"),
+        "GOOGLE_DRIVE_FOLDER_ID": os.environ.get("GOOGLE_DRIVE_FOLDER_ID", ""),
+        "GOOGLE_CREDENTIALS_PATH": os.environ.get("GOOGLE_CREDENTIALS_PATH", ""),
     }
     _validate_config(cfg)
     return cfg
