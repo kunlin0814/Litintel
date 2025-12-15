@@ -42,6 +42,7 @@ def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
         "Name": {"title": [{"text": {"content": truncate(rec.get("Title", "Untitled"))}}]},
         "PMID": {"rich_text": [{"text": {"content": str(rec.get("PMID", ""))}}]},
         "DOI": {"rich_text": [{"text": {"content": str(rec.get("DOI", ""))}}]},
+        "DedupeKey": {"rich_text": [{"text": {"content": str(rec.get("PMID") or rec.get("DOI", ""))}}]},
         "RelevanceScore": {"number": rec.get("RelevanceScore", 0)},
         "WhyRelevant": {"rich_text": [{"text": {"content": truncate(rec.get("WhyRelevant", ""))}}]},
         "StudySummary": {"rich_text": [{"text": {"content": truncate(rec.get("StudySummary", ""))}}]},
@@ -62,7 +63,6 @@ def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
         "MeSH_Headings": {"rich_text": [{"text": {"content": truncate(rec.get("MeSH_Headings", ""))}}]},
         
         # Metadata
-        "PipelineConfidence": {"select": {"name": rec.get("PipelineConfidence", "Low")}},
         "AI_EvidenceLevel": {"select": {"name": rec.get("AI_EvidenceLevel", "Abstract")}},
         "WhyYouMightCare": {"rich_text": [{"text": {"content": truncate(rec.get("WhyYouMightCare", ""))}}]},
         "Journal": {"select": {"name": sanitize_select_option(rec.get("Journal", ""))}},

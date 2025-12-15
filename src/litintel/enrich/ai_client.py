@@ -160,9 +160,30 @@ TEXT_END
         # Normalize keys: OpenAI sometimes returns RELEVANCESCORE instead of RelevanceScore
         result_json = _normalize_keys(result_json)
         
-        # Validation
-        # validated_rec = pydantic_model(**result_json) # Strict check
-        # return validated_rec.model_dump()
+        # Ensure AI-specific fields have defaults (don't validate full schema yet - that needs PubMed fields)
+        ai_field_defaults = {
+            "RelevanceScore": 0,
+            "WhyRelevant": "",
+            "WhyYouMightCare": "",
+            "StudySummary": "",
+            "PaperRole": "",
+            "Theme": "",
+            "Methods": "",
+            "KeyFindings": "",
+            "DataTypes": "",
+            "Group": "",
+            "CellIdentitySignatures": "",
+            "PerturbationsUsed": "",
+            "GEO_Validated": "",
+            "SRA_Validated": "",
+            "PipelineConfidence": "Low"
+        }
+        
+        # Add missing fields with defaults
+        for field, default in ai_field_defaults.items():
+            if field not in result_json:
+                result_json[field] = default
+        
         return result_json
 
     except Exception as e:
