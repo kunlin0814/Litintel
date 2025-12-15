@@ -157,6 +157,9 @@ TEXT_END
              resp = model.generate_content(user_prompt)
              result_json = json.loads(resp.text) # Robust extraction needed in real impl
              
+        # Normalize keys: OpenAI sometimes returns RELEVANCESCORE instead of RelevanceScore
+        result_json = _normalize_keys(result_json)
+        
         # Validation
         # validated_rec = pydantic_model(**result_json) # Strict check
         # return validated_rec.model_dump()
@@ -165,3 +168,34 @@ TEXT_END
     except Exception as e:
         logger.error(f"Enrichment failed for {pmid}: {e}")
         return {"RelevanceScore": -1, "WhyRelevant": f"Error: {str(e)}", "PipelineConfidence": "Error"}
+
+# Key normalization map: lowercase -> canonical CamelCase
+_KEY_MAP = {
+    "relevancescore": "RelevanceScore",
+    "whyrelevant": "WhyRelevant",
+    "whyyoumightcare": "WhyYouMightCare",
+    "studysummary": "StudySummary",
+    "paperrole": "PaperRole",
+    "theme": "Theme",
+    "methods": "Methods",
+    "keyfindings": "KeyFindings",
+    "datatypes": "DataTypes",
+    "group": "Group",
+    "group (pi / lab)": "Group",
+    "cellidentitysignatures": "CellIdentitySignatures",
+    "perturbationsused": "PerturbationsUsed",
+    "geo_validated": "GEO_Validated",
+    "sra_validated": "SRA_Validated",
+    "geo/sra validation": "GEO_Validated",
+    "geo sra validation": "GEO_Validated",
+    "pipelineconfidence": "PipelineConfidence",
+}
+
+def _normalize_keys(d: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize AI output keys to canonical schema names."""
+    out = {}
+    for k, v in d.items():
+        canonical = _KEY_MAP.get(k.lower().strip(), k)
+        out[canonical] = v
+    return out
+
