@@ -43,7 +43,7 @@ if __name__ == "__main__":
     )
     
     print("Deployment created: 'tier1-pca-gold-standard'")
-    print("Source: https://github.com/kunlin0814/LiteratureSearch.git")
+    print("Source: https://github.com/kunlin0814/internal_research_ops.git")
     print("Pool: literature-managed-pool (Serverless)")
     print("Schedule: Every Monday at 7:00 AM EST")
     print("Target: Tier 1 Config (Gold Standard)")
