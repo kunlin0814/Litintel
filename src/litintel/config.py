@@ -63,3 +63,9 @@ class AppConfig(BaseModel):
     ai: AIConfig
     storage: StorageConfig
     dedup: DedupConfig
+
+def load_config_from_yaml(path: str) -> AppConfig:
+    import yaml
+    with open(path, "r") as f:
+        raw = yaml.safe_load(f)
+    return AppConfig(**raw)
