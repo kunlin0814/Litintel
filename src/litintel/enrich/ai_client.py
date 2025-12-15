@@ -16,9 +16,9 @@ from litintel.enrich.schema import Tier1Record, Tier2Record
 
 logger = logging.getLogger(__name__)
 
-# Global Clients
-_GEMINI_MODEL_CLIENT = None
+# Global Clients (OpenAI client can be cached; Gemini model cannot due to varying config)
 _OPENAI_CLIENT = None
+_GEMINI_CONFIGURED = False
 
 def _get_openai_client():
     global _OPENAI_CLIENT
@@ -28,20 +28,28 @@ def _get_openai_client():
         _OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     return _OPENAI_CLIENT
 
+def _configure_gemini():
+    """Configure Gemini API once. Raises if API key is missing."""
+    global _GEMINI_CONFIGURED
+    if not _GEMINI_CONFIGURED:
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY not set")
+        genai.configure(api_key=api_key)
+        _GEMINI_CONFIGURED = True
+
 def _get_gemini_model(system_instruction: str, response_schema: Dict[str, Any]):
-    global _GEMINI_MODEL_CLIENT
-    if not _GEMINI_MODEL_CLIENT:
-        genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
-        _GEMINI_MODEL_CLIENT = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=system_instruction,
-            generation_config={
-                "temperature": 0.1,
-                "response_mime_type": "application/json",
-                "response_schema": response_schema,
-            },
-        )
-    return _GEMINI_MODEL_CLIENT
+    """Create a fresh Gemini model per call (system_instruction & schema vary by tier)."""
+    _configure_gemini()
+    return genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system_instruction,
+        generation_config={
+            "temperature": 0.1,
+            "response_mime_type": "application/json",
+            "response_schema": response_schema,
+        },
+    )
 
 def _call_openai(
     client: OpenAI, 
@@ -51,13 +59,9 @@ def _call_openai(
     schema: Dict[str, Any]
 ) -> Tuple[Dict[str, Any], int]:
     
-    # Construct JSON schema for OpenAI strict structure
-    json_schema = {
-        "name": "response_schema",
-        "strict": True,
-        "schema": schema 
-    }
-    
+    # Construct JSON schema for OpenAI
+    # Note: strict=True mode has limitations with complex pydantic schemas
+    # Using json_object mode instead for compatibility
     params = {
         "model": model,
         "messages": [
@@ -65,8 +69,7 @@ def _call_openai(
             {"role": "user", "content": user_prompt}
         ],
         "response_format": {
-            "type": "json_schema",
-            "json_schema": json_schema
+            "type": "json_object"  # Use json_object instead of strict json_schema
         }
     }
     if not model.startswith("gpt-5"):
@@ -96,16 +99,30 @@ def enrich_record(
     system_prompt: str,
     json_schema: Dict[str, Any],
     pydantic_model: Any, # Tier1Record or Tier2Record class
-    group_fallback: str = ""
+    group_fallback: str = "",
+    geo_candidates: str = "",
+    sra_candidates: str = ""
 ) -> Dict[str, Any]:
     
     # Inject fallback into prompt
     final_system_prompt = system_prompt.format(group_fallback=group_fallback) # Expects {group_fallback} placeholder
     
+    # Build user prompt with optional candidate validation
     user_prompt = f"""PMID: {pmid}
 Authors: {authors}
 GroupFallbackCandidate: {group_fallback}
-
+"""
+    
+    # Add GEO/SRA candidates if present (for AI validation)
+    if geo_candidates or sra_candidates:
+        user_prompt += "\n--- ACCESSION VALIDATION ---\n"
+        if geo_candidates:
+            user_prompt += f"GEO_Candidates (found via regex): {geo_candidates}\n"
+        if sra_candidates:
+            user_prompt += f"SRA_Candidates (found via regex): {sra_candidates}\n"
+        user_prompt += "Validate which are THIS study's data (see schema instructions).\n"
+    
+    user_prompt += f"""
 TEXT_START
 {text}
 TEXT_END
@@ -117,18 +134,22 @@ TEXT_END
     try:
         if provider == AIProvider.OPENAI:
             client = _get_openai_client()
+            already_escalated = False
+            
             # Try Default Model
             try:
                 result_json, _ = _call_openai(client, config.model_default, final_system_prompt, user_prompt, json_schema)
             except Exception as e:
                 logger.warning(f"PMID {pmid}: Failed with {config.model_default} ({e}). Escalating...")
                 result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                already_escalated = True
                 
-            # Escalation Logic based on Score
-            score = result_json.get("RelevanceScore", 0)
-            if 70 <= score <= 84:
-                 logger.info(f"PMID {pmid}: Ambiguous score ({score}). Escalating to {config.model_escalate}...")
-                 result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+            # Score-based escalation (only if we haven't already escalated)
+            if not already_escalated:
+                score = result_json.get("RelevanceScore", 0)
+                if 70 <= score <= 84:
+                    logger.info(f"PMID {pmid}: Ambiguous score ({score}). Escalating to {config.model_escalate}...")
+                    result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
 
         elif provider == AIProvider.GEMINI:
              # Gemini implementation (simplified for brevity, matching previous module)

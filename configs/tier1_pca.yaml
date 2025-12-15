@@ -6,7 +6,32 @@ pipeline_name: "PCa_Triage_GoldStandard"
 discovery:
   mode: KEYWORD
   queries:
-    - '(("prostate cancer"[Title/Abstract] OR "PCa"[Title/Abstract]) AND ("spatial"[Title/Abstract] OR "single-cell"[Title/Abstract] OR "scRNA"[Title/Abstract] OR "snRNA"[Title/Abstract] OR "multiome"[Title/Abstract]))'
+    - >
+      ("Prostatic Neoplasms"[MeSH Terms]
+      OR prostate[tiab]
+      OR prostatic[tiab]
+      OR "prostate cancer"[tiab])
+      AND
+      ("spatial transcriptom*"[tiab] OR "spatial gene expression"[tiab]
+      OR "spatial multiomic*"[tiab] OR "spatial omics"[tiab]
+      OR "spatial multi-omics"[tiab]
+      OR Visium[tiab] OR Xenium[tiab] OR CosMx[tiab] OR GeoMx[tiab]
+      OR "Slide-seq"[tiab] OR "SlideSeq"[tiab]
+      OR "spatial ATAC"[tiab] OR "spatial-ATAC"[tiab]
+      OR "single-cell"[tiab] OR "single cell"[tiab]
+      OR "single-nucleus"[tiab] OR "single nucleus"[tiab]
+      OR scRNA*[tiab] OR snRNA*[tiab] OR scATAC*[tiab] OR snATAC*[tiab]
+      OR multiome[tiab] OR "10x multiome"[tiab]
+      OR pseudotime[tiab] OR "trajectory inference"[tiab] OR "RNA velocity"[tiab])
+      AND ("Journal Article"[pt]
+      NOT "Review"[pt]
+      NOT "Editorial"[pt]
+      NOT "Comment"[pt]
+      NOT "Letter"[pt]
+      NOT "News"[pt]
+      NOT "Case Reports"[pt])
+      AND english[la]
+      NOT "Preprint"[Publication Type]
   retmax: 50
   reldays: 120
 

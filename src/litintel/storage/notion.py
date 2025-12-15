@@ -1,5 +1,7 @@
 import os
 import logging
+import time
+import requests
 from typing import Dict, Any, List
 
 from litintel.enrich.schema import Tier1Record, Tier2Record
@@ -25,6 +27,8 @@ def truncate(text: str, limit: int = 2000) -> str:
 
 def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
     # Maps Tier1Record to Notion Properties (Gold Standard)
+    from datetime import datetime
+    
     props = {
         "Name": {"title": [{"text": {"content": truncate(rec.get("Title", "Untitled"))}}]},
         "PMID": {"rich_text": [{"text": {"content": str(rec.get("PMID", ""))}}]},
@@ -38,10 +42,38 @@ def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
         "Group": {"rich_text": [{"text": {"content": truncate(rec.get("Group", ""))}}]},
         "CellIdentitySignatures": {"rich_text": [{"text": {"content": truncate(rec.get("CellIdentitySignatures", ""))}}]},
         "PerturbationsUsed": {"rich_text": [{"text": {"content": truncate(rec.get("PerturbationsUsed", ""))}}]},
+        
+        # NEW: Genomic Data Accessions (AI-Validated)
+        "GEO_Validated": {"rich_text": [{"text": {"content": truncate(rec.get("GEO_Validated", ""))}}]},
+        "SRA_Validated": {"rich_text": [{"text": {"content": truncate(rec.get("SRA_Validated", ""))}}]},
+        
+        # NEW: MeSH Terms
+        "MeSH_Major": {"rich_text": [{"text": {"content": truncate(rec.get("MeSH_Major", ""))}}]},
+        "MeSH_Terms": {"rich_text": [{"text": {"content": truncate(rec.get("MeSH_Terms", ""))}}]},
+        "MeSH_Headings": {"rich_text": [{"text": {"content": truncate(rec.get("MeSH_Headings", ""))}}]},
+        
+        # Metadata
         "PipelineConfidence": {"select": {"name": rec.get("PipelineConfidence", "Low")}},
-        "Year": {"number": int(rec.get("Year")) if rec.get("Year", "").isdigit() else None},
+        "AI_EvidenceLevel": {"select": {"name": rec.get("AI_EvidenceLevel", "Abstract")}},
+        "WhyYouMightCare": {"rich_text": [{"text": {"content": truncate(rec.get("WhyYouMightCare", ""))}}]},
         "Journal": {"select": {"name": truncate(rec.get("Journal", "Unknown"), 100)}},
+        
+        # Additional Useful Fields
+        "FullTextUsed": {"checkbox": rec.get("FullTextUsed", False)},
+        "Abstract": {"rich_text": [{"text": {"content": truncate(rec.get("Abstract", ""), 2000)}}]},
+        "Authors": {"rich_text": [{"text": {"content": truncate(rec.get("Authors", ""), 2000)}}]},
+        "LastChecked": {"date": {"start": datetime.now().date().isoformat()}},
     }
+    
+    # URL (PubMed link)
+    pmid = rec.get("PMID")
+    if pmid:
+        props["URL"] = {"url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"}
+    
+    # PubDate (exact publication date if available, otherwise use Year as YYYY-01-01)
+    year = rec.get("Year")
+    if year and year.isdigit():
+        props["PubDate"] = {"date": {"start": f"{year}-01-01"}}
     
     # Text Arrays (Multi-select)
     if rec.get("Theme"):
@@ -104,3 +136,72 @@ def upsert_records(records: List[Dict[str, Any]], database_id: str, tier: int = 
             logger.info(f"Created Notion page for {rec.get('PMID')}")
         except Exception as e:
             logger.error(f"Failed to create Notion page for {rec.get('PMID')}: {e}")
+    logger.info(f"Upserted {len(records)} records to Notion database {database_id}")
+
+
+def build_notion_index(database_id: str) -> Dict[str, str]:
+    """
+    Build an index of existing papers in Notion database.
+    
+    Maps DedupeKey (PMID or DOI) to page_id for fast lookup.
+    This enables smart pagination - we can check if a paper already exists
+    before fetching/enriching it.
+    
+    Args:
+        database_id: Notion database ID
+        
+    Returns:
+        Dict mapping DedupeKey → page_id
+    """
+    token = os.environ.get("NOTION_TOKEN")
+    if not token:
+        logger.warning("NOTION_TOKEN not set; returning empty index")
+        return {}
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+    
+    url = f"https://api.notion.com/v1/databases/{database_id}/query"
+    index: Dict[str, str] = {}
+    payload: Dict[str, Any] = {}
+    has_more = True
+    
+    try:
+        while has_more:
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            for page in data.get("results", []):
+                props = page.get("properties", {})
+                
+                # Try DedupeKey field first
+                dedupe_prop = props.get("DedupeKey")
+                if dedupe_prop and dedupe_prop.get("rich_text"):
+                    text = "".join(t["plain_text"] for t in dedupe_prop["rich_text"])
+                    if text:
+                        index[text] = page["id"]
+                        continue
+                
+                # Fallback: try PMID field
+                pmid_prop = props.get("PMID")
+                if pmid_prop and pmid_prop.get("rich_text"):
+                    pmid = "".join(t["plain_text"] for t in pmid_prop["rich_text"])
+                    if pmid:
+                        index[pmid] = page["id"]
+            
+            has_more = data.get("has_more", False)
+            payload["start_cursor"] = data.get("next_cursor")
+            
+            # Rate limiting
+            time.sleep(0.3)
+        
+        logger.info(f"Built Notion index with {len(index)} existing papers")
+        return index
+        
+    except Exception as e:
+        logger.error(f"Failed to build Notion index: {e}")
+        return {}

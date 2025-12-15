@@ -10,7 +10,21 @@ class BaseRecord(BaseModel):
     Journal: Optional[str] = ""
     Year: Optional[str] = ""
     FullTextUsed: bool = False
-    PipelineConfidence: str = "Low"
+    AI_EvidenceLevel: str = "Abstract"  # FullText | Abstract | TitleOnly
+    PipelineConfidence: str = "Low"     # Low | Medium | Medium-Ambiguous | High | Error
+    
+    # Decision Support
+    WhyYouMightCare: Optional[str] = ""
+
+    # Genomic Data Accessions (Dual-Confidence Strategy)
+    GEO_Candidates: Optional[str] = ""      # Medium - blind regex from full-text
+    GEO_Validated: Optional[str] = ""       # High - AI confirmed as study's own data
+    SRA_Candidates: Optional[str] = ""      # Medium - blind regex from full-text
+    SRA_Validated: Optional[str] = ""       # High - AI confirmed as study's own data
+    # MeSH Terms
+    MeSH_Headings: Optional[str] = ""  # MeSH with qualifiers
+    MeSH_Terms: Optional[str] = ""      # All descriptor names
+    MeSH_Major: Optional[str] = ""      # Major topics only
 
 class Tier1Record(BaseRecord):
     """Schema for Prostate Cancer Triage (Gold Standard)"""
@@ -25,6 +39,9 @@ class Tier1Record(BaseRecord):
     Group: str = ""
     CellIdentitySignatures: str = ""
     PerturbationsUsed: str = ""
+    # AI-Validated Accessions (subset of candidates confirmed as study's own data)
+    GEO_Validated: str = ""
+    SRA_Validated: str = ""
 
 class Tier2Record(BaseRecord):
     """Schema for Methods Discovery"""

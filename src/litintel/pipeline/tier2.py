@@ -37,9 +37,13 @@ def run_tier2_pipeline(config: AppConfig):
             queries.extend(config.discovery.keyword_queries)
             
     logger.info(f"Executing {len(queries)} discovery queries...")
-    for q in queries:
+    for i, q in enumerate(queries):
         ids = search_pubmed(q, retmax=config.discovery.retmax, reldays=config.discovery.reldays)
         pmids.update(ids)
+        # Rate limiting: NCBI recommends max 3 requests/second
+        if i < len(queries) - 1:
+            import time
+            time.sleep(0.34)
         
     unique_pmids = list(pmids)
     logger.info(f"Total Unique PMIDs found: {len(unique_pmids)}")

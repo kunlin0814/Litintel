@@ -3,6 +3,10 @@ import yaml
 import logging
 from rich.logging import RichHandler
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 from litintel.config import AppConfig
 from litintel.pipeline.tier1 import run_tier1_pipeline
