@@ -19,3 +19,7 @@ figures/
 .vscode/
 .idea/
 ore
+# OAuth Credentials
+client_secret.json
+token.json
+secrets_key/

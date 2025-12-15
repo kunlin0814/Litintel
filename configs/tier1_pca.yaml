@@ -32,7 +32,7 @@ discovery:
       NOT "Case Reports"[pt])
       AND english[la]
       NOT "Preprint"[Publication Type]
-  retmax: 50
+  retmax: 20
   reldays: 120
 
 ai:
@@ -48,8 +48,6 @@ storage:
     database_id_env: "NOTION_DB_ID"
   drive:
     enabled: true
-    folder_id_env: "GOOGLE_DRIVE_FOLDER_ID"
-    markdown_grouping: "Quarterly" # Quarterly, Monthly, or None
   csv:
     enabled: true
     filename: "papers_tier1.csv"

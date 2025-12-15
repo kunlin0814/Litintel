@@ -12,7 +12,10 @@ import logging
 import math
 from typing import Optional, List, Dict, Any
 
+from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import google.auth
@@ -28,11 +31,12 @@ def get_drive_service(credentials_path: Optional[str] = None):
     Authenticate and return the Drive service.
     
     Supports:
-    1. Service Account Key (from GOOGLE_CREDENTIALS_PATH)
-    2. Application Default Credentials (via gcloud auth application-default login)
+    1. Service Account (if GOOGLE_CREDENTIALS_PATH matches a service account JSON)
+    2. OAuth User Flow (if GOOGLE_CLIENT_SECRETS_PATH is set)
+    3. Application Default Credentials (ADC) as fallback
     
     Args:
-        credentials_path: Optional path to service account JSON
+        credentials_path: Optional path to service account JSON OR client secrets JSON
         
     Returns:
         Google Drive API service
@@ -41,14 +45,46 @@ def get_drive_service(credentials_path: Optional[str] = None):
     
     # 1. Try Service Account (Explicit Path)
     if credentials_path and os.path.exists(credentials_path):
+        # Naive check: does it look like a service account?
         try:
-            creds = service_account.Credentials.from_service_account_file(
-                credentials_path, scopes=SCOPES
-            )
+            with open(credentials_path) as f:
+                data = json.load(f)
+                if data.get('type') == 'service_account':
+                     creds = service_account.Credentials.from_service_account_file(
+                        credentials_path, scopes=SCOPES
+                    )
+                     logger.info("Using Service Account")
         except Exception as e:
-            logger.warning(f"Service Account load failed: {e}")
-    
-    # 2. Try Application Default Credentials (ADC)
+            logger.warning(f"Service Account check failed: {e}")
+
+    # 2. Try User OAuth Flow (Client Secrets)
+    client_secrets = os.environ.get("GOOGLE_CLIENT_SECRETS_PATH")
+    if not creds and client_secrets and os.path.exists(client_secrets):
+        token_path = 'token.json'
+        
+        # Load cached token
+        if os.path.exists(token_path):
+            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+            
+        # Refresh or Login
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception:
+                    creds = None
+            
+            if not creds:
+                flow = InstalledAppFlow.from_client_secrets_file(client_secrets, SCOPES)
+                creds = flow.run_local_server(port=0)
+            
+            # Save token
+            with open(token_path, 'w') as token:
+                token.write(creds.to_json())
+        
+        logger.info("Using User OAuth Credentials")
+
+    # 3. Try Application Default Credentials (ADC)
     if not creds:
         try:
             creds, project = google.auth.default(scopes=SCOPES)
@@ -58,8 +94,8 @@ def get_drive_service(credentials_path: Optional[str] = None):
     
     if not creds:
         raise ValueError(
-            "No valid credentials found. Please set GOOGLE_CREDENTIALS_PATH "
-            "or run 'gcloud auth application-default login'"
+            "No valid credentials found. Please set GOOGLE_CLIENT_SECRETS_PATH "
+            "(for personal accounts) or GOOGLE_CREDENTIALS_PATH (for service accounts)."
         )
     
     return build('drive', 'v3', credentials=creds)
