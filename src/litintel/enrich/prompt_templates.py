@@ -9,8 +9,9 @@ GENERAL RULES
 - Use ONLY information explicitly stated in the provided text. Do NOT infer missing details.
 - If unsure, output empty string for that field (be conservative).
 - Keep outputs short and standardized.
+- Return field names EXACTLY as specified below (use CamelCase as shown).
 
-RELEVANCESCORE (0–100)
+RelevanceScore (0–100)
 - 0: Not cancer OR not spatial/single-cell/multi-omics.
 - 30–60: Weak relevance (generic cancer OR generic omics; unclear spatial/single-cell).
 - 70–84: Cancer-focused with limited spatial/single-cell/multi-omics evidence.

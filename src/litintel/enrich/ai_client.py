@@ -79,6 +79,7 @@ def _call_openai(
         response = client.chat.completions.create(**params)
         raw_json = response.choices[0].message.content
         output_tokens = response.usage.completion_tokens
+        logger.debug(f"OpenAI raw response ({model}): {raw_json[:500]}...")
         return json.loads(raw_json), output_tokens
     except Exception as e:
         # Simple Rate Limit Retry Logic
@@ -88,6 +89,7 @@ def _call_openai(
             response = client.chat.completions.create(**params)
             raw_json = response.choices[0].message.content
             output_tokens = response.usage.completion_tokens
+            logger.debug(f"OpenAI raw response after retry ({model}): {raw_json[:500]}...")
             return json.loads(raw_json), output_tokens
         raise e
 
@@ -158,7 +160,16 @@ TEXT_END
              result_json = json.loads(resp.text) # Robust extraction needed in real impl
              
         # Normalize keys: OpenAI sometimes returns RELEVANCESCORE instead of RelevanceScore
+        logger.debug(f"PMID {pmid}: Raw AI keys before normalization: {list(result_json.keys())}")
         result_json = _normalize_keys(result_json)
+        logger.debug(f"PMID {pmid}: Keys after normalization: {list(result_json.keys())}")
+        
+        # Log RelevanceScore for debugging
+        rel_score = result_json.get("RelevanceScore", None)
+        if rel_score is None or rel_score == 0:
+            logger.warning(f"PMID {pmid}: RelevanceScore is {rel_score}. Check AI response.")
+        else:
+            logger.info(f"PMID {pmid}: RelevanceScore = {rel_score}")
         
         # Ensure AI-specific fields have defaults (don't validate full schema yet - that needs PubMed fields)
         ai_field_defaults = {
