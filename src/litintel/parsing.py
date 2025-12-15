@@ -88,6 +88,7 @@ def normalize_record(article_element: ET.Element) -> Dict[str, Any]:
     pmid = pmid_el.text if pmid_el is not None else ""
     
     doi = ""
+    pmcid = ""
     pubmed_data = article_element.find("PubmedData")
     if pubmed_data is not None:
         id_list = pubmed_data.find("ArticleIdList")
@@ -95,6 +96,8 @@ def normalize_record(article_element: ET.Element) -> Dict[str, Any]:
             for aid in id_list.findall("ArticleId"):
                 if aid.get("IdType") == "doi":
                     doi = aid.text
+                elif aid.get("IdType") == "pmc":
+                    pmcid = aid.text
 
     # Extract GEO/SRA/MeSH metadata
     geo_list, sra_list = extract_geo_sra_from_pubmed_xml(article_element)
@@ -103,6 +106,7 @@ def normalize_record(article_element: ET.Element) -> Dict[str, Any]:
     return {
         "PMID": str(pmid),
         "DOI": str(doi) if doi else "",
+        "PMCID": str(pmcid) if pmcid else "",
         "Title": str(title) if title else "",
         "Abstract": str(abstract),
         "Authors": str(authors_str),

@@ -25,6 +25,15 @@ def truncate(text: str, limit: int = 2000) -> str:
         return ""
     return text[:limit]
 
+def sanitize_select_option(text: str) -> str:
+    """Sanitize text for Notion Select options (no commas)."""
+    if not text:
+        return "Unknown"
+    # Replace commas with empty string or semicolon if strictly needed, 
+    # but for journal names usually removing 'The' or simple truncation is better. 
+    # Here we replace with period as requested.
+    return truncate(text.replace(",", "."), 100)
+
 def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
     # Maps Tier1Record to Notion Properties (Gold Standard)
     from datetime import datetime
@@ -56,7 +65,7 @@ def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
         "PipelineConfidence": {"select": {"name": rec.get("PipelineConfidence", "Low")}},
         "AI_EvidenceLevel": {"select": {"name": rec.get("AI_EvidenceLevel", "Abstract")}},
         "WhyYouMightCare": {"rich_text": [{"text": {"content": truncate(rec.get("WhyYouMightCare", ""))}}]},
-        "Journal": {"select": {"name": truncate(rec.get("Journal", "Unknown"), 100)}},
+        "Journal": {"select": {"name": sanitize_select_option(rec.get("Journal", ""))}},
         
         # Additional Useful Fields
         "FullTextUsed": {"checkbox": rec.get("FullTextUsed", False)},
