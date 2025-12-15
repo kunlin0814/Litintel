@@ -24,7 +24,7 @@ if __name__ == "__main__":
     # This tells Prefect to clone this repo before running
     # IMPORTANT: You must push your latest code to GitHub for this to work!
     flow_from_source = tier1_literature_flow.from_source(
-        source="https://github.com/kunlin0814/LiteratureSearch.git",
+        source="https://github.com/kunlin0814/internal_research_ops.git",
         entrypoint=".deployment/biweekly_flow.py:tier1_literature_flow"
     )
     
