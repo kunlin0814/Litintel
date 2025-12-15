@@ -19,6 +19,11 @@ logging.basicConfig(
     datefmt="[%X]",
     handlers=[RichHandler(rich_tracebacks=True)]
 )
+
+# Silence verbose HTTP logs from OpenAI/httpx
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+
 logger = logging.getLogger("litintel")
 
 app = typer.Typer(help="Literature Intelligence CLI")
