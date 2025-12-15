@@ -21,8 +21,14 @@ logging.basicConfig(
 )
 
 # Silence verbose HTTP logs from OpenAI/httpx
+import logging
+
+logging.basicConfig(level=logging.WARNING)
+
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+
 
 logger = logging.getLogger("litintel")
 
