@@ -64,6 +64,7 @@ def run_tier1_pipeline(config: AppConfig):
     # Initialize defaults
     for r in clean_records:
         r["AI_EvidenceLevel"] = "Abstract"
+        r["FullTextUsed"] = False
     
     # 3.5. PMC Full-Text Fetch (if available)
     logger.info("Checking for PMC full-text availability...")
