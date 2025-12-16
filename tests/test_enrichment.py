@@ -110,3 +110,49 @@ def test_openai_falls_back_when_primary_raises(monkeypatch):
     assert rec["RelevanceScore"] == 80
     assert rec["PipelineConfidence"] == "Medium-Ambiguous"
     assert rec["DataTypes"] == "visium, scrna-seq"
+
+
+def test_openai_escalates_on_none_score(monkeypatch):
+    calls = []
+
+    def fake_openai(user_prompt, logger, model_name="gpt-5-nano"):
+        calls.append(model_name)
+        if model_name == "gpt-5-nano":
+            return (
+                {
+                    "RelevanceScore": None,  # Simulate Null/None from AI
+                    "WhyRelevant": "Failed parsing",
+                    "StudySummary": "",
+                    "Methods": "",
+                    "KeyFindings": "",
+                    "DataTypes": "",
+                    "Group": "",
+                },
+                5,
+            )
+        return (
+            {
+                "RelevanceScore": 85,
+                "WhyRelevant": "Escalated and Fixed",
+                "StudySummary": "",
+                "Methods": "",
+                "KeyFindings": "",
+                "DataTypes": "",
+                "Group": "",
+            },
+            5,
+        )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "dummy")
+    monkeypatch.setattr(enrichment, "_call_openai_api", fake_openai)
+
+    result = enrichment.ai_enrich_records(
+        records=[_base_record()],
+        efetch_data={"1": {"Abstract": "example abstract"}},
+        pmc_fulltext_map={},
+        cfg=_empty_cfg(),
+    )
+
+    assert calls == ["gpt-5-nano", "gpt-5-mini"]
+    assert result[0]["RelevanceScore"] == 85
+    assert result[0]["PipelineConfidence"] == "Medium-Ambiguous"

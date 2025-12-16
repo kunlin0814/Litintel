@@ -462,9 +462,20 @@ def ai_enrich_records(
                     parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=DEFAULT_MODEL)
                     
                     # Escalation Check
-                    rel_score = parsed.get("RelevanceScore", 0)
+                    rel_score = parsed.get("RelevanceScore")
                     needs_escalation = False
                     
+                    # Treat None/Missing as reason to escalate
+                    if rel_score is None:
+                        needs_escalation = True
+                        rel_score = 0
+                    else:
+                        try:
+                            rel_score = int(rel_score)
+                        except (ValueError, TypeError):
+                            needs_escalation = True
+                            rel_score = 0
+
                     # Trigger 1: Ambiguous Score (70-84) - matches "limited spatial/single-cell" tier
                     if 70 <= rel_score <= 84:
                         needs_escalation = True
@@ -572,7 +583,14 @@ def ai_enrich_records(
                 normalized_types.append(dt)
         parsed["DataTypes"] = ", ".join(dict.fromkeys(normalized_types))
 
-        relevance_score = parsed.get("RelevanceScore", 0)
+        relevance_score = parsed.get("RelevanceScore")
+        if relevance_score is None:
+            relevance_score = 0
+        try:
+            relevance_score = int(relevance_score)
+        except (ValueError, TypeError):
+            relevance_score = 0
+        
         why_relevant = parsed.get("WhyRelevant", "")
         wr = why_relevant.lower()
         if relevance_score == 0 and (
