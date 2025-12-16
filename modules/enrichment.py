@@ -19,34 +19,190 @@ except ImportError:
     _OPENAI_CLIENT = None
 
 
-# Common prompt template used by both providers
-SYSTEM_INSTRUCTION = (
-    "You are a PhD-level bioinformatics curator specializing in cancer biology, "
-    "prostate cancer, spatial transcriptomics, single-cell genomics, and multi-omics methods. "
-    "Given paper text, return ONLY a JSON object matching the provided schema.\\n\\n"
-    "RelevanceScore rules:\\n"
-    "- 0 = Not relevant (neither cancer nor spatial/single-cell/multi-omics).\\n"
-    "- 30–60 = Weak: generic cancer OR generic omics method.\\n"
-    "- 70–84 = Cancer-focused but limited spatial/single-cell/multi-omics.\\n"
-    "- 85–94 = Prostate cancer + at least one key technology (scRNA/snrna, scATAC/snatac, multiome, Visium/Xenium/CosMx/GeoMx).\\n"
-    "- 95–100 = Prostate cancer + both single-cell/multiome AND spatial technology.\\n"
-    "- For non-prostate cancers, assign ≥75 only if ≥3 relevant technologies are clearly used.\\n\\n"
-    "WhyRelevant: 1 sentence explaining the score.\\n"
-    "StudySummary: 2–3 sentences (aim, system/cohort, main result).\\n"
-    "PaperRole: 1 sentence explaining the paper's role in the field (e.g. 'Core framework paper', 'Incremental method improvement').\\n"
-    "Theme: Semi-colon separated controlled tags (e.g. 'Spatial lineage; Epigenetic heterogeneity; CNV inference').\\n"
-    "Methods: Experimental platforms + computational tools if stated.\\n"
-    "KeyFindings: Concise bullet-like points in a single string separated by ';'.\\n"
-    "DataTypes: Comma-separated assays; use controlled vocabulary when possible; empty string if not reported.\\n"
-    "Group: The 'Principal Investigator' or 'Lab Name' (e.g. 'Charles Lab', 'Doe Lab'). Strictly PI identity.\\n"
-    "  1. Look for 'Corresponding Author' or 'Correspondence to'.\\n"
-    "  2. Use Name or Lab Name.\\n"
-    "  3. If 'Correspondence to' is not present, strictly use the LAST author from the provided Author list.\\n"
-    "  4. If NO authors listed, use empty string.\\n\\n"
-    "CellIdentitySignatures: Extract signatures explicitly used to define cell types/states (e.g. 'Basal: KRT5, KRT14; Luminal: KRT8, AR'). Empty if not reported.\\n"
-    "PerturbationsUsed: Semicolon-separated list of genetic/chemical manipulations (e.g. 'PTEN loss; Enzalutamide; ERG OE'). Empty if none.\\n\\n"
-    "Missing info → empty string. No fabrication. Output compact JSON only."
-)
+# =============================================================================
+# CACHE-OPTIMIZED SYSTEM INSTRUCTION
+# =============================================================================
+# This large, static system message (>1024 tokens) is automatically cached by
+# OpenAI's API, providing a 50% discount on input tokens for all subsequent
+# calls within a session. All static content (schema, rubric, taxonomy,
+# constraints) is consolidated here to maximize cache efficiency.
+# =============================================================================
+
+SYSTEM_INSTRUCTION = """You are a PhD-level bioinformatics curator specializing in cancer biology, prostate cancer, spatial transcriptomics, single-cell genomics, and multi-omics methods.
+
+================================================================================
+TASK: Analyze the provided paper text and return a structured JSON object.
+================================================================================
+
+## OUTPUT JSON SCHEMA (strict)
+
+You MUST return a JSON object with EXACTLY these fields:
+
+{
+  "RelevanceScore": <integer 0-100>,
+  "WhyRelevant": <string, 1 sentence>,
+  "StudySummary": <string, 2-3 sentences>,
+  "PaperRole": <string, 1 sentence>,
+  "Theme": <string, semicolon-separated tags>,
+  "Methods": <string, platforms and tools>,
+  "KeyFindings": <string, semicolon-separated points>,
+  "DataTypes": <string, comma-separated assays>,
+  "Group": <string, PI or Lab name>,
+  "CellIdentitySignatures": <string, marker definitions>,
+  "PerturbationsUsed": <string, semicolon-separated manipulations>
+}
+
+================================================================================
+RELEVANCE SCORING RUBRIC
+================================================================================
+
+Score papers based on their relevance to PROSTATE CANCER + SPATIAL/SINGLE-CELL/MULTI-OMICS:
+
+### Tier 0: Not Relevant (Score = 0)
+- Paper has neither cancer focus NOR spatial/single-cell/multi-omics methods
+- Pure clinical trials without molecular data
+- Computational methods tested only on non-cancer data
+
+### Tier 1: Weak Relevance (Score = 30-60)
+- Generic cancer study without spatial/single-cell/multi-omics (score 30-45)
+- Spatial/single-cell method paper but tested on non-cancer tissue (score 45-60)
+- Review articles summarizing the field (score 40-50)
+
+### Tier 2: Moderate Relevance (Score = 70-84)
+- Cancer-focused study with LIMITED spatial/single-cell/multi-omics
+- Non-prostate cancer with 1-2 relevant technologies
+- Prostate cancer with only bulk RNA-seq or standard genomics
+- Method development tested on cancer cell lines only
+
+### Tier 3: High Relevance (Score = 85-94)
+- Prostate cancer + at least ONE key technology:
+  * Single-cell RNA-seq (scRNA-seq, snRNA-seq)
+  * Single-cell ATAC-seq (scATAC-seq, snATAC-seq)
+  * Multiome (10x Multiome, joint RNA+ATAC)
+  * Spatial transcriptomics (Visium, Xenium, CosMx, GeoMx, MERFISH, Slide-seq)
+- Non-prostate cancer with ≥3 relevant technologies
+
+### Tier 4: Highest Relevance (Score = 95-100)
+- Prostate cancer + BOTH:
+  * Single-cell/multiome technology AND
+  * Spatial technology
+- Primary human tissue data (not just cell lines)
+- Novel biological insights into prostate cancer heterogeneity
+
+================================================================================
+METHOD & PLATFORM TAXONOMY
+================================================================================
+
+Use these controlled terms when classifying Methods and DataTypes:
+
+### Single-Cell Sequencing
+- scRNA-seq, snRNA-seq (single-cell/nucleus RNA)
+- scATAC-seq, snATAC-seq (single-cell/nucleus ATAC)
+- Multiome, 10x Multiome (joint RNA+ATAC)
+- CITE-seq (protein + RNA)
+- scDNA-seq (single-cell DNA/CNV)
+
+### Spatial Technologies
+- 10x Visium, Visium HD (spot-based spatial transcriptomics)
+- 10x Xenium (in-situ spatial transcriptomics)
+- NanoString CosMx (in-situ spatial transcriptomics)
+- NanoString GeoMx (spatial proteomics/transcriptomics)
+- MERFISH, seqFISH (imaging-based spatial)
+- Slide-seq, Slide-seqV2 (bead-based spatial)
+- Spatial ATAC, spatial-ATAC-seq
+
+### Bulk Sequencing
+- Bulk RNA-seq
+- WGS (whole genome sequencing)
+- WES (whole exome sequencing)
+- ChIP-seq, CUT&RUN, CUT&Tag
+- ATAC-seq (bulk)
+- Bisulfite-seq, WGBS (methylation)
+
+### Imaging & Histology
+- H&E staining
+- Immunohistochemistry (IHC)
+- Immunofluorescence (IF)
+- Multiplexed imaging (CODEX, IMC, MIBI)
+
+### Computational Methods
+- Trajectory inference, pseudotime analysis
+- RNA velocity
+- Cell-cell communication (CellChat, CellPhoneDB, NicheNet)
+- Deconvolution (RCTD, cell2location, Tangram)
+- CNV inference (inferCNV, CopyKAT, epiAneufinder)
+- Integration (Harmony, LIGER, Seurat CCA)
+
+================================================================================
+FIELD EXTRACTION GUIDELINES
+================================================================================
+
+### WhyRelevant
+- 1 sentence explaining why you assigned the RelevanceScore
+- Be specific about which technologies and cancer types were present
+
+### StudySummary
+- 2-3 sentences covering: (1) study aim, (2) system/cohort studied, (3) main finding
+- Example: "This study profiled the tumor microenvironment in localized prostate cancer using snRNA-seq and Visium. The authors analyzed 15 treatment-naive samples and 10 post-treatment samples. They identified a novel CAF subtype associated with treatment resistance."
+
+### PaperRole
+- 1 sentence categorizing the paper's contribution
+- Examples: "Core framework paper for spatial prostate cancer analysis", "Incremental method improvement for CNV calling", "First comprehensive atlas of prostate cancer cell states", "Benchmarking study comparing deconvolution methods"
+
+### Theme
+- Semicolon-separated controlled tags describing research themes
+- Examples: "Spatial lineage tracing; Tumor heterogeneity; Treatment resistance"
+- Common themes: Tumor microenvironment; Immune infiltration; Epithelial plasticity; AR signaling; Neuroendocrine differentiation; Metastasis; Drug resistance; Clonal evolution; CNV inference; Epigenetic regulation
+
+### Methods
+- List experimental platforms AND computational tools mentioned
+- Format: "Experimental: [platforms]; Computational: [tools]"
+- Example: "Experimental: 10x Visium, snRNA-seq; Computational: Seurat v5, CellChat, inferCNV"
+
+### KeyFindings
+- Concise bullet points separated by semicolons
+- Each finding should be a complete thought
+- Example: "Identified 3 novel CAF subtypes; SPINK1+ cells mark aggressive disease; Spatial niche analysis revealed immune exclusion zones"
+
+### DataTypes
+- Comma-separated list using controlled vocabulary from taxonomy above
+- Example: "snRNA-seq, Visium, H&E"
+
+### Group
+- The Principal Investigator or Lab name
+- PRIORITY ORDER:
+  1. Look for "Corresponding Author" or "Correspondence to" in the text
+  2. Extract the PI name or lab name
+  3. If no correspondence info, use the LAST author from the provided author list
+  4. If no authors available, return empty string
+- Format: "LastName Lab" or just "LastName"
+
+### CellIdentitySignatures
+- Extract gene signatures explicitly used to define cell types/states
+- Format: "CellType1: GENE1, GENE2; CellType2: GENE3, GENE4"
+- Example: "Basal: KRT5, KRT14, TP63; Luminal: KRT8, KRT18, AR; Club: SCGB1A1, PIGR"
+- Return empty string if not explicitly reported
+
+### PerturbationsUsed
+- Semicolon-separated list of genetic or chemical manipulations
+- Include: knockouts, knockdowns, overexpression, drug treatments, CRISPR screens
+- Example: "PTEN knockout; Enzalutamide treatment; ERG overexpression; CRISPR screen for AR regulators"
+- Return empty string if no perturbations
+
+================================================================================
+STRICT OUTPUT CONSTRAINTS
+================================================================================
+
+1. Return ONLY the JSON object - no markdown, no explanation, no preamble
+2. All string values must be properly escaped (no unescaped quotes or newlines)
+3. RelevanceScore MUST be an integer between 0 and 100
+4. Missing information → empty string (""), never null or "N/A"
+5. Do NOT fabricate information - only extract what is explicitly stated
+6. Keep output compact - no unnecessary whitespace in JSON
+7. All 11 fields are REQUIRED in the output
+
+================================================================================
+"""
 
 # Global model cache
 _GEMINI_MODEL = None
@@ -323,8 +479,16 @@ def _call_openai_api(user_prompt: str, logger, model_name: str = "gpt-5-nano") -
     
     raw_json = response.choices[0].message.content
     output_tokens = response.usage.completion_tokens
+    input_tokens = response.usage.prompt_tokens
     
-    return json.loads(raw_json), output_tokens
+    # Extract cached tokens if available (OpenAI returns this for cache hits)
+    cached_tokens = getattr(response.usage, 'prompt_tokens_details', None)
+    if cached_tokens and hasattr(cached_tokens, 'cached_tokens'):
+        cached_tokens = cached_tokens.cached_tokens
+    else:
+        cached_tokens = 0
+    
+    return json.loads(raw_json), output_tokens, input_tokens, cached_tokens
 
 
 @task(retries=2, retry_delay_seconds=30)
@@ -393,6 +557,7 @@ def ai_enrich_records(
     # Token tracking for TPM monitoring
     total_input_tokens = 0
     total_output_tokens = 0
+    total_cached_tokens = 0  # Track actual cache hits from OpenAI
     start_time = time.time()
     
     for rec in records:
@@ -427,29 +592,16 @@ def ai_enrich_records(
         authors_str = rec.get("Authors", "") or "No authors listed"
         last_author = _extract_last_author(authors_str)
         
+        # Minimal user prompt - all instructions are in the cached system message
         user_prompt = (
-        f"You will be given text associated with a scientific paper for PMID {pmid}.\\n"
-        "Carefully read it and then fill the JSON fields exactly as specified in your system instructions.\\n"
-        f"The authors listed for this paper are: {authors_str}\\n"
-        f"GroupFallbackCandidate: {last_author if last_author else 'Not available'}\\n"
-        "If no correspondence information is present, set Group exactly to the GroupFallbackCandidate value above.\\n"
-        "Return ONLY the JSON object and nothing else.\\n\\n\\n"
-        "TEXT_START\\n"
-        f"{text_to_analyze}\\n"
-        "TEXT_END"
+            f"PMID: {pmid}\n"
+            f"Authors: {authors_str}\n"
+            f"GroupFallbackCandidate: {last_author if last_author else 'Not available'}\n\n"
+            f"{text_to_analyze}"
         )
         
-        # Estimate token usage (rough approximation: 1 token ≈ 4 characters)
-        estimated_input_tokens = len(user_prompt) // 4
-        total_input_tokens += estimated_input_tokens
-        elapsed_minutes = (time.time() - start_time) / 60.0 or 0.01
-        tokens_per_minute = total_input_tokens / elapsed_minutes
-        
-        logger.info(
-            f"PMID {pmid}: ~{estimated_input_tokens:,} input tokens | "
-            f"Cumulative: {total_input_tokens:,} tokens in {elapsed_minutes:.2f} min "
-            f"(~{tokens_per_minute:,.0f} TPM)"
-        )
+        # Pre-call token estimate for logging
+        user_tokens_estimate = len(user_prompt) // 4
         
         parsed = {} # Ensure parsed is defined
         try:
@@ -459,7 +611,17 @@ def ai_enrich_records(
             else:  # openai
                 # Try 1: Default Model (Nano)
                 try:
-                    parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=DEFAULT_MODEL)
+                    parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, model_name=DEFAULT_MODEL)
+                    
+                    # Log actual cache metrics from OpenAI
+                    cache_pct = (cached_tokens / input_tokens * 100) if input_tokens > 0 else 0
+                    logger.info(
+                        f"PMID {pmid}: {input_tokens:,} input tokens "
+                        f"(cached: {cached_tokens:,} = {cache_pct:.0f}%) | "
+                        f"Output: {output_tokens:,} tokens"
+                    )
+                    total_input_tokens += input_tokens
+                    total_cached_tokens += cached_tokens
                     
                     # Escalation Check
                     rel_score = parsed.get("RelevanceScore")
@@ -488,7 +650,9 @@ def ai_enrich_records(
                     if needs_escalation:
                         # Try 2: Escalation Model (Mini)
                         logger.info(f"Escalating PMID {pmid} to {ESCALATION_MODEL} for better reasoning...")
-                        parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                        parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                        total_input_tokens += input_tokens
+                        total_cached_tokens += cached_tokens
                         
                 except Exception as e_nano:
                     # Check if it's an OpenAI rate limit (429)
@@ -500,17 +664,23 @@ def ai_enrich_records(
                             wait_time = 2 ** retry  # 1s, 2s, 4s
                             time.sleep(wait_time)
                             try:
-                                parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=DEFAULT_MODEL)
+                                parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, model_name=DEFAULT_MODEL)
+                                total_input_tokens += input_tokens
+                                total_cached_tokens += cached_tokens
                                 logger.info(f"PMID {pmid}: Retry {retry+1} succeeded.")
                                 break
                             except Exception as e_retry:
                                 if retry == 2:  # Last retry
                                     logger.warning(f"PMID {pmid}: All retries failed. Escalating to {ESCALATION_MODEL}...")
-                                    parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                                    parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                                    total_input_tokens += input_tokens
+                                    total_cached_tokens += cached_tokens
                     else:
                         # Other errors: escalate to better model
                         logger.warning(f"PMID {pmid}: Failed with {DEFAULT_MODEL} ({e_nano}). Escalating to {ESCALATION_MODEL}...")
-                        parsed, output_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                        parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, model_name=ESCALATION_MODEL)
+                        total_input_tokens += input_tokens
+                        total_cached_tokens += cached_tokens
 
             total_output_tokens += output_tokens
             
