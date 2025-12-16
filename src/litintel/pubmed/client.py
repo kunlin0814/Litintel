@@ -8,12 +8,13 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
-def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, email: str = "agent@deepmind.com") -> List[str]:
+def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: int = 0, email: str = "agent@deepmind.com") -> List[str]:
     # eSearch
     params = {
         "db": "pubmed",
         "term": query,
         "retmax": retmax,
+        "retstart": retstart,
         "reldate": reldays,
         "datetype": "pdat",
         "sort": "relevance",

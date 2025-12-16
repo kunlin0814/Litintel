@@ -31,26 +31,62 @@ def run_tier1_pipeline(config: AppConfig):
             logger.info("Building Notion index for deduplication...")
             notion_index = build_notion_index(real_db_id)
     
-    # 1. Search
+    # 1. Search with Optimized Batching
+    # We fetch larger batches (200) to skip over duplicates quickly, but only analyze 'retmax' (e.g. 30)
     unique_pmids = set()
+    SEARCH_BATCH_SIZE = 200  
+    MAX_PAGES = 5            # Fetch up to 1000 papers to find our 30 new ones
+    
+    target_count = config.discovery.retmax
+    
     for query in config.discovery.queries:
-        pmids = search_pubmed(
-            query=query,
-            retmax=config.discovery.retmax,
-            reldays=config.discovery.reldays
-        )
-        unique_pmids.update(pmids)
+        start_offset = 0
+        page = 0
+        
+        while page < MAX_PAGES:
+            params = {
+                "query": query,
+                "retmax": SEARCH_BATCH_SIZE,
+                "reldays": config.discovery.reldays,
+                "retstart": start_offset
+            }
+            logger.info(f"Searching PubMed (Page {page+1}): '{query[:40]}...' [limit={SEARCH_BATCH_SIZE}, offset={start_offset}]")
+            
+            batch_pmids = search_pubmed(**params)
+            
+            if not batch_pmids:
+                break
+                
+            # Filter duplicates immediately
+            candidates = set(batch_pmids)
+            if notion_index:
+                new_candidates = {p for p in candidates if p not in notion_index}
+                # Log detail: e.g. "Fetched 200 -> 5 new"
+                logger.info(f"  - Hits: {len(batch_pmids)} | Duplicates: {len(batch_pmids)-len(new_candidates)} | NEW: {len(new_candidates)}")
+            else:
+                new_candidates = candidates
+                logger.info(f"  - Hits: {len(batch_pmids)} (No duplication check enabled)")
+                
+            unique_pmids.update(new_candidates)
+            
+            # Stop conditions
+            if len(unique_pmids) >= target_count:
+                logger.info(f"reached target of {target_count} new papers.")
+                break
+                
+            if len(batch_pmids) < SEARCH_BATCH_SIZE:
+                 logger.info("End of search results.")
+                 break
+                
+            # Prepare next page
+            start_offset += SEARCH_BATCH_SIZE
+            page += 1
+            
+    # Normalize to list and limit to exact target count
+    final_pmids = list(unique_pmids)[:target_count]
+    logger.info(f"Final Selection: {len(final_pmids)} papers for analysis (Target: {target_count})")
     
-    logger.info(f"Found {len(unique_pmids)} unique PMIDs from search")
-    
-    # Filter out papers already in Notion
-    if notion_index:
-        new_pmids = [p for p in unique_pmids if p not in notion_index]
-        skipped = len(unique_pmids) - len(new_pmids)
-        logger.info(f"Skipped {skipped} papers already in Notion, {len(new_pmids)} new")
-        unique_pmids = new_pmids
-    
-    if not unique_pmids:
+    if not final_pmids:
         logger.info("No new papers to process")
         return
 
