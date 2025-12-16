@@ -145,29 +145,12 @@ TEXT_END
                 logger.warning(f"PMID {pmid}: Failed with {config.model_default} ({e}). Escalating...")
                 result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
                 already_escalated = True
-                
+            
             # Score-based escalation (only if we haven't already escalated)
             if not already_escalated:
-                score = result_json.get("RelevanceScore")
-                
-                # Treat None/Missing as reason to escalate
-                if score is None:
-                    score = 0
-                    result_json["RelevanceScore"] = 0 # Ensure it's set
-                    needs_escalation = True
-                else:
-                    try:
-                        score = int(score)
-                    except (ValueError, TypeError):
-                        score = 0
-                        result_json["RelevanceScore"] = 0
-                        needs_escalation = True
-                    else:
-                        # Valid integer score
-                        if 70 <= score <= 84:
-                            needs_escalation = True
-                        else:
-                            needs_escalation = False
+                score, score_invalid = _coerce_relevance_score(result_json.get("RelevanceScore"))
+                result_json["RelevanceScore"] = score
+                needs_escalation = score_invalid or (70 <= score <= 84)
                             
                 if needs_escalation:
                     logger.info(f"PMID {pmid}: Ambiguous or missing score ({score}). Escalating to {config.model_escalate}...")
@@ -184,9 +167,10 @@ TEXT_END
         result_json = _normalize_keys(result_json)
         logger.debug(f"PMID {pmid}: Keys after normalization: {list(result_json.keys())}")
         
-        # Log RelevanceScore for debugging
-        rel_score = result_json.get("RelevanceScore", None)
-        if rel_score is None or rel_score == 0:
+        # Normalize the RelevanceScore so downstream never sees None/invalid values
+        rel_score, rel_invalid = _coerce_relevance_score(result_json.get("RelevanceScore"))
+        result_json["RelevanceScore"] = rel_score
+        if rel_invalid or rel_score == 0:
             logger.warning(f"PMID {pmid}: RelevanceScore is {rel_score}. Check AI response.")
         else:
             logger.info(f"PMID {pmid}: RelevanceScore = {rel_score}")
@@ -251,3 +235,12 @@ def _normalize_keys(d: Dict[str, Any]) -> Dict[str, Any]:
         out[canonical] = v
     return out
 
+def _coerce_relevance_score(score_value: Any) -> Tuple[int, bool]:
+    """Return an int score (default 0) and flag if coercion failed."""
+    if score_value is None:
+        return 0, True
+    try:
+        coerced = int(score_value)
+        return coerced, False
+    except (TypeError, ValueError):
+        return 0, True

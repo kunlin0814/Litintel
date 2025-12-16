@@ -66,5 +66,39 @@ class TestLitIntelAIClient(unittest.TestCase):
         self.assertEqual(result["WhyRelevant"], "Escalated Success")
         print("Test passed: LitIntel AI Client Escalates on None Score")
 
+    @patch('src.litintel.enrich.ai_client._get_openai_client')
+    @patch('src.litintel.enrich.ai_client._call_openai')
+    def test_enrich_record_normalizes_none_score_to_zero(self, mock_call_openai, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Both default and escalated calls return None for RelevanceScore
+        mock_call_openai.side_effect = [
+            ({"RelevanceScore": None, "WhyRelevant": "First try"}, 100),
+            ({"RelevanceScore": None, "WhyRelevant": "Second try"}, 200),
+        ]
+
+        config = AIConfig(
+            provider=AIProvider.OPENAI,
+            model_default="gpt-5-nano",
+            model_escalate="gpt-5-mini",
+            max_chars=1000,
+            prompt_template="Dummy Prompt"
+        )
+
+        result = enrich_record(
+            text="Test text",
+            authors="Test Authors",
+            pmid="12345",
+            config=config,
+            system_prompt="System Prompt",
+            json_schema={},
+            pydantic_model=None
+        )
+
+        self.assertEqual(mock_call_openai.call_count, 2)
+        self.assertEqual(result["RelevanceScore"], 0)
+        self.assertEqual(result["WhyRelevant"], "Second try")
+
 if __name__ == '__main__':
     unittest.main()
