@@ -13,7 +13,9 @@ This is not just a literature search script—it's a **Research Intelligence Lay
 It continuously monitors PubMed, uses AI to understand and score each paper, and persists structured insights to Notion and Google Drive. Your research "memory" grows over time, queryable by humans and AI agents alike (e.g., NotebookLM).
 
 **Key Capabilities:**
--   **AI Enrichment**: OpenAI or Gemini extract `RelevanceScore`, `StudySummary`, `Methods`, `KeyFindings`, `DataTypes`, `WhyYouMightCare`.
+-   **AI Enrichment**: OpenAI (GPT-5 Nano/Mini) or Gemini extract structured insights.
+-   **Cost-Optimized**: Automatic **Prompt Caching** reduces API costs by ~50% for repetitive system instructions.
+-   **Smart Search**: Fetches papers in **batches of 200** to efficiently bypass duplicates and find new content using deep pagination (up to 1,000 papers).
 -   **Provenance Tracking**: Know exactly what evidence the AI used (`AI_EvidenceLevel`: FullText or Abstract).
 -   **Dual-Confidence Accession**: GEO/SRA candidates are regex-extracted, then AI-validated.
 -   **Multi-Storage Sync**: Notion (human review), Google Drive JSONL (machine ingestion), CSV (archival).

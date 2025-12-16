@@ -57,7 +57,7 @@ def _call_openai(
     system_prompt: str, 
     user_prompt: str,
     schema: Dict[str, Any]
-) -> Tuple[Dict[str, Any], int]:
+) -> Tuple[Dict[str, Any], Dict[str, int]]:
     
     # Construct JSON schema for OpenAI
     # Note: strict=True mode has limitations with complex pydantic schemas
@@ -78,9 +78,25 @@ def _call_openai(
     try:
         response = client.chat.completions.create(**params)
         raw_json = response.choices[0].message.content
-        output_tokens = response.usage.completion_tokens
+        
+        # Usage extraction
+        u = response.usage
+        output_tokens = u.completion_tokens
+        input_tokens = u.prompt_tokens
+        cached_tokens = 0
+        
+        # Extract cached tokens (OpenAI specific field)
+        if hasattr(u, 'prompt_tokens_details') and u.prompt_tokens_details:
+            cached_tokens = getattr(u.prompt_tokens_details, 'cached_tokens', 0)
+
+        usage = {
+            "input": input_tokens, 
+            "output": output_tokens, 
+            "cached": cached_tokens
+        }
+        
         logger.debug(f"OpenAI raw response ({model}): {raw_json[:500]}...")
-        return json.loads(raw_json), output_tokens
+        return json.loads(raw_json), usage
     except Exception as e:
         # Simple Rate Limit Retry Logic
         if "429" in str(e) or "rate limit" in str(e).lower():
@@ -88,9 +104,15 @@ def _call_openai(
             time.sleep(2)
             response = client.chat.completions.create(**params)
             raw_json = response.choices[0].message.content
-            output_tokens = response.usage.completion_tokens
+            
+            u = response.usage
+            usage = {
+                "input": u.prompt_tokens,
+                "output": u.completion_tokens,
+                "cached": 0 # simplified retry
+            }
             logger.debug(f"OpenAI raw response after retry ({model}): {raw_json[:500]}...")
-            return json.loads(raw_json), output_tokens
+            return json.loads(raw_json), usage
         raise e
 
 def enrich_record(
@@ -137,14 +159,22 @@ TEXT_END
         if provider == AIProvider.OPENAI:
             client = _get_openai_client()
             already_escalated = False
+            usage = {}
             
             # Try Default Model
             try:
-                result_json, _ = _call_openai(client, config.model_default, final_system_prompt, user_prompt, json_schema)
+                result_json, usage = _call_openai(client, config.model_default, final_system_prompt, user_prompt, json_schema)
             except Exception as e:
                 logger.warning(f"PMID {pmid}: Failed with {config.model_default} ({e}). Escalating...")
-                result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                result_json, usage = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
                 already_escalated = True
+            
+            # Log Token Usage with Caching
+            cached_pct = 0.0
+            if usage.get("input", 0) > 0:
+                cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
+                
+            logger.info(f"PMID {pmid} AI Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
             
             # Score-based escalation (only if we haven't already escalated)
             if not already_escalated:
