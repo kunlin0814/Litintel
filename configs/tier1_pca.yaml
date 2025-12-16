@@ -32,7 +32,7 @@ discovery:
       NOT "Case Reports"[pt])
       AND english[la]
       NOT "Preprint"[Publication Type]
-  retmax: 25
+  retmax: 30
   reldays: 120
 
 ai:
