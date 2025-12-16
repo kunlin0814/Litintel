@@ -148,9 +148,29 @@ TEXT_END
                 
             # Score-based escalation (only if we haven't already escalated)
             if not already_escalated:
-                score = result_json.get("RelevanceScore", 0)
-                if 70 <= score <= 84:
-                    logger.info(f"PMID {pmid}: Ambiguous score ({score}). Escalating to {config.model_escalate}...")
+                score = result_json.get("RelevanceScore")
+                
+                # Treat None/Missing as reason to escalate
+                if score is None:
+                    score = 0
+                    result_json["RelevanceScore"] = 0 # Ensure it's set
+                    needs_escalation = True
+                else:
+                    try:
+                        score = int(score)
+                    except (ValueError, TypeError):
+                        score = 0
+                        result_json["RelevanceScore"] = 0
+                        needs_escalation = True
+                    else:
+                        # Valid integer score
+                        if 70 <= score <= 84:
+                            needs_escalation = True
+                        else:
+                            needs_escalation = False
+                            
+                if needs_escalation:
+                    logger.info(f"PMID {pmid}: Ambiguous or missing score ({score}). Escalating to {config.model_escalate}...")
                     result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
 
         elif provider == AIProvider.GEMINI:
