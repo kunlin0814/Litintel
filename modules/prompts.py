@@ -32,17 +32,17 @@ TASK: Analyze the provided paper text and return a structured JSON object.
 You MUST return a JSON object with EXACTLY these fields:
 
 {
-  "RelevanceScore": <integer 0-100>,
-  "WhyRelevant": <string, 1 sentence>,
-  "StudySummary": <string, 2-3 sentences>,
-  "PaperRole": <string, 1 sentence>,
-  "Theme": <string, semicolon-separated tags>,
-  "Methods": <string, platforms and tools>,
-  "KeyFindings": <string, semicolon-separated points>,
-  "DataTypes": <string, comma-separated assays>,
-  "Group": <string, PI or Lab name>,
-  "CellIdentitySignatures": <string, marker definitions>,
-  "PerturbationsUsed": <string, semicolon-separated manipulations>
+  "RelevanceScore": 85,
+  "WhyRelevant": "One sentence justification",
+  "StudySummary": "2-3 sentences describing aim, cohort, and result",
+  "PaperRole": "One sentence about paper's contribution",
+  "Theme": "Tag1; Tag2; Tag3",
+  "Methods": "Experimental: platforms; Computational: tools",
+  "KeyFindings": "Finding1; Finding2; Finding3",
+  "DataTypes": "assay1, assay2, assay3",
+  "Group": "PI LastName or Lab name",
+  "CellIdentitySignatures": "CellType1: GENE1, GENE2; CellType2: GENE3",
+  "PerturbationsUsed": "Perturbation1; Perturbation2"
 }
 
 ================================================================================
@@ -211,17 +211,17 @@ TASK: Analyze the provided paper text and return a structured JSON object.
 You MUST return a JSON object with EXACTLY these fields:
 
 {
-  "RelevanceScore": <integer 0-100>,
-  "WhyRelevant": <string, 1 sentence>,
-  "StudySummary": <string, 2 sentences>,
-  "PaperRole": <string, 1 sentence>,
-  "Theme": <string, semicolon-separated tags>,
-  "Methods": <string, platforms and tools>,
-  "KeyFindings": <string, semicolon-separated points>,
-  "DataTypes": <string, comma-separated assays>,
-  "Group": <string, PI or Lab name>,
-  "CellIdentitySignatures": <string, deprecated - leave empty>,
-  "PerturbationsUsed": <string, deprecated - leave empty>
+  "RelevanceScore": 85,
+  "WhyRelevant": "One sentence justification",
+  "StudySummary": "2 sentences describing the method",
+  "PaperRole": "New Method / Benchmarking Study / Protocol",
+  "Theme": "Integration; Deconvolution; Velocity",
+  "Methods": "Computational: ToolName vs Comparator",
+  "KeyFindings": "Finding1; Finding2",
+  "DataTypes": "assay1, assay2",
+  "Group": "PI LastName or Lab",
+  "CellIdentitySignatures": "",
+  "PerturbationsUsed": ""
 }
 
 **Note**: CellIdentitySignatures and PerturbationsUsed are less relevant for methods papers but required for schema compatibility; return empty strings.

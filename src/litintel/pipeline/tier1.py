@@ -31,15 +31,21 @@ def run_tier1_pipeline(config: AppConfig):
             logger.info("Building Notion index for deduplication...")
             notion_index = build_notion_index(real_db_id)
     
-    # 1. Search with Optimized Batching
+    # 1. Search with Optimized Batching (Ordered + Deduplicated)
     # We fetch larger batches (200) to skip over duplicates quickly, but only analyze 'retmax' (e.g. 30)
-    unique_pmids = set()
-    SEARCH_BATCH_SIZE = 200  
-    MAX_PAGES = 5            # Fetch up to 1000 papers to find our 30 new ones
+    seen_pmids = set()
+    ordered_pmids = []
     
+    SEARCH_BATCH_SIZE = 200  
+    MAX_PAGES = 5            # Fetch up to 1000 papers per query
     target_count = config.discovery.retmax
     
     for query in config.discovery.queries:
+        # Check if we already have enough papers from previous queries
+        if len(ordered_pmids) >= target_count:
+            logger.info(f"Target of {target_count} papers reached before query: '{query[:20]}...'")
+            break
+
         start_offset = 0
         page = 0
         
@@ -57,20 +63,27 @@ def run_tier1_pipeline(config: AppConfig):
             if not batch_pmids:
                 break
                 
-            # Filter duplicates immediately
-            candidates = set(batch_pmids)
-            if notion_index:
-                new_candidates = {p for p in candidates if p not in notion_index}
-                # Log detail: e.g. "Fetched 200 -> 5 new"
-                logger.info(f"  - Hits: {len(batch_pmids)} | Duplicates: {len(batch_pmids)-len(new_candidates)} | NEW: {len(new_candidates)}")
-            else:
-                new_candidates = candidates
-                logger.info(f"  - Hits: {len(batch_pmids)} (No duplication check enabled)")
-                
-            unique_pmids.update(new_candidates)
+            # Filter duplicates immediately while PRESERVING ORDER
+            new_in_batch = 0
+            for pmid in batch_pmids:
+                if pmid not in seen_pmids:
+                    # Check Notion Index
+                    if notion_index and pmid in notion_index:
+                        continue
+                    
+                    # It's new!
+                    seen_pmids.add(pmid)
+                    ordered_pmids.append(pmid)
+                    new_in_batch += 1
+                    
+                    # Stop accumulating if we hit target
+                    if len(ordered_pmids) >= target_count:
+                        break
             
+            logger.info(f"  - Hits: {len(batch_pmids)} | New added: {new_in_batch} | Total New: {len(ordered_pmids)}")
+
             # Stop conditions
-            if len(unique_pmids) >= target_count:
+            if len(ordered_pmids) >= target_count:
                 logger.info(f"reached target of {target_count} new papers.")
                 break
                 
@@ -82,8 +95,8 @@ def run_tier1_pipeline(config: AppConfig):
             start_offset += SEARCH_BATCH_SIZE
             page += 1
             
-    # Normalize to list and limit to exact target count
-    final_pmids = list(unique_pmids)[:target_count]
+    # Final list is already limited by the loop logic, but safety slice just in case
+    final_pmids = ordered_pmids[:target_count]
     logger.info(f"Final Selection: {len(final_pmids)} papers for analysis (Target: {target_count})")
     
     if not final_pmids:
@@ -91,7 +104,7 @@ def run_tier1_pipeline(config: AppConfig):
         return
 
     # 2. Fetch & Parse
-    xml_data = fetch_details(list(unique_pmids))
+    xml_data = fetch_details(final_pmids)
     raw_records = parse_pubmed_xml_stream(xml_data)
     
     # 3. Dedup

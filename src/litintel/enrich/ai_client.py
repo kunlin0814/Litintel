@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import re
 import logging
 from typing import Dict, Any, Tuple, Optional
 from pydantic import ValidationError
@@ -15,6 +16,32 @@ from litintel.config import AIConfig, AIProvider
 from litintel.enrich.schema import Tier1Record, Tier2Record
 
 logger = logging.getLogger(__name__)
+
+def _extract_json(raw: str) -> Dict[str, Any]:
+    """Extract and parse JSON from AI response, handling markdown code blocks."""
+    if not raw:
+        return {}
+    
+    text = raw.strip()
+    
+    # Try to extract JSON from markdown code block
+    # Pattern: ```json\n{...}\n``` or ```\n{...}\n```
+    code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
+    if code_block_match:
+        text = code_block_match.group(1).strip()
+    
+    # Try to find JSON object directly
+    # Look for first { and last }
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end+1]
+    
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON decode error: {e}. Raw (first 500): {raw[:500]}")
+        return {}
 
 # Global Clients (OpenAI client can be cached; Gemini model cannot due to varying config)
 _OPENAI_CLIENT = None
@@ -96,7 +123,7 @@ def _call_openai(
         }
         
         logger.debug(f"OpenAI raw response ({model}): {raw_json[:500]}...")
-        return json.loads(raw_json), usage
+        return _extract_json(raw_json), usage
     except Exception as e:
         # Simple Rate Limit Retry Logic
         if "429" in str(e) or "rate limit" in str(e).lower():
@@ -112,7 +139,7 @@ def _call_openai(
                 "cached": 0 # simplified retry
             }
             logger.debug(f"OpenAI raw response after retry ({model}): {raw_json[:500]}...")
-            return json.loads(raw_json), usage
+            return _extract_json(raw_json), usage
         raise e
 
 def enrich_record(
@@ -128,8 +155,8 @@ def enrich_record(
     sra_candidates: str = ""
 ) -> Dict[str, Any]:
     
-    # Inject fallback into prompt
-    final_system_prompt = system_prompt.format(group_fallback=group_fallback) # Expects {group_fallback} placeholder
+    # Inject fallback into prompt (using replace to avoid conflicts with JSON braces)
+    final_system_prompt = system_prompt.replace("{group_fallback}", group_fallback)
     
     # Build user prompt with optional candidate validation
     user_prompt = f"""PMID: {pmid}
