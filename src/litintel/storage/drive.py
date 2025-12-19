@@ -289,6 +289,8 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
     lines.append("---")
     lines.append(f"## PMID: {rec.get('PMID')} — {rec.get('Journal', 'Unknown')} ({rec.get('Year', 'N/A')})")
     lines.append(f"**Title**: {rec.get('Title', 'Untitled')}")
+    lines.append(f"**Authors**: {rec.get('Authors', '')}")
+    lines.append(f"**Published**: {rec.get('PubDate', rec.get('Year', 'N/A'))}")
     lines.append(f"**Group**: {rec.get('Group', '')}")
     lines.append(f"**RelevanceScore**: {rec.get('RelevanceScore')}")
     lines.append(f"**PipelineConfidence**: {rec.get('PipelineConfidence', 'N/A')}")
@@ -331,6 +333,217 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
         lines.append(findings)
     
     return "\n".join(lines)
+
+
+def format_comp_methods_block(rec: Dict[str, Any]) -> str:
+    """
+    Format a computational methods block for quarterly append file.
+    
+    Each paper contributes one bounded block for NotebookLM/AI consumption.
+    Only called for full-text papers with comp_methods data.
+    
+    Args:
+        rec: Record dictionary with comp_methods field
+        
+    Returns:
+        Formatted markdown block with delimiter
+    """
+    comp = rec.get("comp_methods") or {}
+    if isinstance(comp, str):
+        return ""
+    
+    pmid = rec.get("PMID", "")
+    year = rec.get("Year", "")
+    journal = rec.get("Journal", "")
+    
+    lines = []
+    lines.append(f"## PMID: {pmid} | {year} | {journal}")
+    lines.append("")
+    lines.append(f"**Title:** {rec.get('Title', '')}")
+    lines.append(f"**Lab / Corresponding:** {rec.get('Group', '')}")
+    
+    # Technologies from existing Methods field
+    methods_str = rec.get("Methods", "")
+    if methods_str:
+        lines.append(f"**Technologies:** {methods_str}")
+    lines.append("")
+    
+    # Computational method highlight
+    lines.append("### Computational method highlight")
+    summary = comp.get("summary_2to3_sentences", "")
+    if summary:
+        # Split summary into bullet points if it's multi-sentence
+        for sent in summary.split(". "):
+            if sent.strip():
+                lines.append(f"- {sent.strip().rstrip('.')}")
+    lines.append("")
+    
+    # Inputs → Outputs
+    lines.append("### Inputs → Outputs")
+    io = comp.get("inputs_outputs", "")
+    if io:
+        lines.append(io)
+    lines.append("")
+    
+    # Key computational steps
+    lines.append("### Key computational steps")
+    tools = comp.get("tools_packages", [])
+    existing = rec.get("Methods", "")
+    # Extract steps from methods if semicolon-separated
+    if ";" in existing:
+        for i, step in enumerate(existing.split(";"), 1):
+            if step.strip():
+                lines.append(f"{i}. {step.strip()}")
+    elif tools:
+        for i, t in enumerate(tools[:8], 1):  # Max 8 steps
+            lines.append(f"{i}. {t}")
+    lines.append("")
+    
+    # Tools / packages
+    lines.append("### Tools / packages")
+    if tools:
+        for t in tools[:10]:
+            lines.append(f"- {t}")
+    lines.append("")
+    
+    # Models / statistics
+    lines.append("### Models / statistics")
+    stats = comp.get("stats_models", [])
+    if stats:
+        for s in stats[:5]:
+            lines.append(f"- {s}")
+    lines.append("")
+    
+    # Assumptions / pitfalls
+    lines.append("### Assumptions / pitfalls")
+    pitfalls = comp.get("assumptions_pitfalls", [])
+    if pitfalls:
+        for p in pitfalls[:5]:
+            lines.append(f"- {p}")
+    lines.append("")
+    
+    # Delimiter
+    lines.append("---")
+    
+    return "\n".join(lines)
+
+
+def write_methods_card(
+    service,
+    methods_folder_id: str,
+    rec: Dict[str, Any]
+) -> str:
+    """
+    Write a per-paper computational methods card to Drive.
+    
+    File: MethodsCards/{PMID}_{slug}.md
+    
+    Args:
+        service: Drive service
+        methods_folder_id: ID of MethodsCards folder
+        rec: Record dictionary
+        
+    Returns:
+        Drive file ID or web view link
+    """
+    pmid = rec.get("PMID", "unknown")
+    title = rec.get("Title", "")
+    # Create slug from title (first 30 chars, alphanumeric only)
+    slug = "".join(c if c.isalnum() else "_" for c in title[:30]).strip("_").lower()
+    filename = f"{pmid}_{slug}.md"
+    
+    content = format_methods_card(rec)
+    if not content:
+        return ""
+    
+    # Upload to Drive
+    media = MediaIoBaseUpload(
+        io.BytesIO(content.encode('utf-8')),
+        mimetype='text/plain',
+        resumable=True
+    )
+    
+    file_metadata = {
+        'name': filename,
+        'parents': [methods_folder_id],
+        'mimeType': 'text/plain'
+    }
+    
+    try:
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, webViewLink',
+            supportsAllDrives=True
+        ).execute()
+        logger.info(f"Created MethodsCard: {filename}")
+        return file.get('webViewLink', file.get('id', ''))
+    except Exception as e:
+        logger.error(f"Failed to create MethodsCard {filename}: {e}")
+        return ""
+
+
+def update_methods_index(
+    service,
+    corpus_folder_id: str,
+    records: List[Dict[str, Any]]
+) -> None:
+    """
+    Update aggregate methods index file for the quarter.
+    
+    File: Computational_Methods_Index_{YYYY}_Q{Q}.md
+    
+    Args:
+        service: Drive service
+        corpus_folder_id: ID of NotebookLM_Corpus folder
+        records: List of records with comp_methods
+    """
+    current_date = datetime.datetime.now()
+    year = current_date.year
+    quarter = math.ceil(current_date.month / 3)
+    filename = f"Computational_Methods_Index_{year}_Q{quarter}.md"
+    
+    # Filter to records with comp_methods
+    methods_records = [r for r in records if r.get("comp_methods") and r.get("FullTextUsed")]
+    if not methods_records:
+        return
+    
+    # Sort by reuse score desc, then relevance desc
+    sorted_records = sorted(
+        methods_records,
+        key=lambda x: (
+            (x.get("comp_methods") or {}).get("reuse_score_0to5", 0),
+            x.get("RelevanceScore", 0)
+        ),
+        reverse=True
+    )
+    
+    # Build index content
+    lines = []
+    lines.append(f"# Computational Methods Index — {year} Q{quarter}")
+    lines.append("")
+    lines.append(f"*Last updated: {current_date.strftime('%Y-%m-%d %H:%M')}*")
+    lines.append("")
+    lines.append("| Title | PMID | Reuse Score | Tags | Summary |")
+    lines.append("|-------|------|-------------|------|---------|")
+    
+    for rec in sorted_records:
+        comp = rec.get("comp_methods") or {}
+        title = rec.get("Title", "")[:50] + ("..." if len(rec.get("Title", "")) > 50 else "")
+        pmid = rec.get("PMID", "")
+        score = comp.get("reuse_score_0to5", 0)
+        tags = ", ".join(comp.get("tags", [])[:3])
+        summary = comp.get("summary_2to3_sentences", "")[:80] + ("..." if len(comp.get("summary_2to3_sentences", "")) > 80 else "")
+        
+        lines.append(f"| {title} | {pmid} | {score}/5 | {tags} | {summary} |")
+    
+    new_content = "\n".join(lines)
+    
+    try:
+        append_text_to_file(service, corpus_folder_id, filename, new_content)
+        logger.info(f"Updated methods index: {filename} with {len(sorted_records)} entries")
+    except Exception as e:
+        logger.error(f"Failed to update methods index: {e}")
 
 
 def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_path: Optional[str] = None) -> None:
@@ -410,3 +623,28 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
             logger.info(f"Appended {len(high_conf_buffer)} papers to {high_conf_filename}")
         except Exception as e:
             logger.error(f"Failed to append to {high_conf_filename}: {e}")
+    
+    # 3. Computational Methods (full-text papers only → quarterly append file)
+    fulltext_records = [r for r in records if r.get("FullTextUsed") and r.get("comp_methods")]
+    if fulltext_records:
+        try:
+            # Ensure Computational_Methods folder exists
+            methods_folder_id = ensure_folder_exists(service, "Computational_Methods", corpus_folder_id)
+            
+            # Build quarterly filename
+            comp_methods_filename = f"CompMethods_{year}_Q{quarter}.md"
+            
+            # Format each paper as a bounded block
+            methods_buffer = []
+            for rec in fulltext_records:
+                block = format_comp_methods_block(rec)
+                if block:
+                    methods_buffer.append(block)
+            
+            # Append to quarterly file
+            if methods_buffer:
+                full_text = "\n\n".join(methods_buffer)
+                append_text_to_file(service, methods_folder_id, comp_methods_filename, full_text)
+                logger.info(f"Appended {len(methods_buffer)} comp methods to {comp_methods_filename}")
+        except Exception as e:
+            logger.error(f"Failed to append computational methods: {e}")

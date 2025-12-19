@@ -172,7 +172,7 @@ def run_tier1_pipeline(config: AppConfig):
         # Build enrichment text: Title + Abstract + PMC (if available)
         enrich_text = f"Title: {rec['Title']}\nAbstract: {rec['Abstract']}"
         if rec.get("PMC_FullText"):
-            enrich_text += f"\n\nFULL TEXT:\n{rec['PMC_FullText'][:8000]}"  # Limit to 8k chars
+            enrich_text += f"\n\nFULL TEXT:\n{rec['PMC_FullText'][:10000]}"  # Limit to 10k chars
 
         enrichment = enrich_record(
             text=enrich_text,

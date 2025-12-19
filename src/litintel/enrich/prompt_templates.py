@@ -183,6 +183,51 @@ FIELD EXTRACTION GUIDELINES
 - Return empty string if no perturbations
 
 ================================================================================
+COMPUTATIONAL METHODS EXTRACTION (FULL-TEXT PAPERS ONLY)
+================================================================================
+
+If the input includes "FULL TEXT:" section, ALSO extract a "comp_methods" object.
+If only abstract is provided, set comp_methods to null.
+
+**IMPORTANT: Extract comp_methods ONLY from the "METHODS:" section of the full text.**
+Ignore Abstract, Results, and Discussion for comp_methods extraction.
+Focus on what computational/analytical steps were performed, not biological findings.
+
+{
+  "comp_methods": {
+    "summary_2to3_sentences": "Brief methods-only summary, no biology narrative",
+    "tags": ["deconvolution", "trajectory_inference"],
+    "reuse_score_0to5": 3,
+    "assumptions_pitfalls": ["Assumes UMI counts", "Sensitive to batch effects"],
+    "tools_packages": ["Seurat v5", "CellChat", "inferCNV"],
+    "inputs_outputs": "Input: 10x scRNA-seq counts → Output: Cell type labels",
+    "stats_models": ["Negative binomial", "Harmony batch correction"]
+  }
+}
+
+### Controlled Tags (MUST pick from this list):
+- integration / batch_correction / cnv_inference / spatial_mapping
+- cell_type_annotation / deconvolution / trajectory_inference
+- peak_gene_linking / motif_enrichment / cell_cell_interaction
+- spatially_variable_genes / segmentation / multimodal_integration
+- visualization / differential_expression / pseudotime
+- clustering / imputation / velocity / normalization
+
+### Reuse Score Rubric:
+- 0: No reusable methods (clinical/descriptive only)
+- 1: Standard pipeline, nothing novel
+- 2: Some custom preprocessing or filtering logic
+- 3: Novel integration/analysis with clear parameters
+- 4: Reusable workflow with code/data availability
+- 5: Benchmark-quality, reproducible, with published tool/code
+
+### Constraints:
+- Extract ONLY from "METHODS:" section — ignore Abstract/Results/Discussion
+- Methods focus ONLY — no biology narrative in summary
+- Max 5 pitfalls, 10 tools, 5 stats models
+- Tags MUST come from controlled list above
+
+================================================================================
 STRICT OUTPUT CONSTRAINTS
 ================================================================================
 
@@ -192,7 +237,7 @@ STRICT OUTPUT CONSTRAINTS
 4. Missing information → empty string (""), never null or "N/A"
 5. Do NOT fabricate information - only extract what is explicitly stated
 6. Keep output compact - no unnecessary whitespace in JSON
-7. All 11 fields are REQUIRED in the output
+7. All 11 base fields are REQUIRED; comp_methods is REQUIRED only for full-text papers
 
 ================================================================================
 """

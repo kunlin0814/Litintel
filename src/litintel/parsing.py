@@ -61,10 +61,18 @@ def normalize_record(article_element: ET.Element) -> Dict[str, Any]:
                 authors.append(f"{l_text} {i_text}")
     authors_str = ", ".join(authors)
     
-    # Journal/Year
+    # Journal/Year/PubDate
     journal = article.find("Journal")
     journal_title = ""
     year = ""
+    pub_date_str = ""
+    
+    # Month name to number mapping
+    month_map = {
+        "jan": "01", "feb": "02", "mar": "03", "apr": "04",
+        "may": "05", "jun": "06", "jul": "07", "aug": "08",
+        "sep": "09", "oct": "10", "nov": "11", "dec": "12"
+    }
     
     if journal is not None:
         j_title_el = journal.find("Title")
@@ -76,12 +84,32 @@ def normalize_record(article_element: ET.Element) -> Dict[str, Any]:
             pub_date = issue.find("PubDate")
             if pub_date is not None:
                 y = pub_date.find("Year")
+                m = pub_date.find("Month")
+                d = pub_date.find("Day")
+                
                 if y is not None:
                     year = y.text
+                    # Build full date string
+                    month_str = "01"
+                    day_str = "01"
+                    
+                    if m is not None and m.text:
+                        month_text = m.text.lower().strip()
+                        # Handle both numeric ("03") and text ("Mar") formats
+                        if month_text.isdigit():
+                            month_str = month_text.zfill(2)
+                        else:
+                            month_str = month_map.get(month_text[:3], "01")
+                    
+                    if d is not None and d.text:
+                        day_str = d.text.zfill(2)
+                    
+                    pub_date_str = f"{year}-{month_str}-{day_str}"
                 else:
                     med_date = pub_date.find("MedlineDate")
                     if med_date is not None and med_date.text:
                         year = med_date.text.split(" ")[0]
+                        pub_date_str = f"{year}-01-01"
 
     # IDs
     pmid_el = medline.find("PMID")
@@ -112,6 +140,7 @@ def normalize_record(article_element: ET.Element) -> Dict[str, Any]:
         "Authors": str(authors_str),
         "Journal": str(journal_title) if journal_title else "",
         "Year": str(year) if year else "",
+        "PubDate": pub_date_str,  # Full date YYYY-MM-DD
         "GEO_Candidates": geo_list,  # From PubMed XML (fallback)
         "SRA_Candidates": sra_list,
         "MeSH_Headings": mesh_headings,

@@ -9,6 +9,7 @@ class BaseRecord(BaseModel):
     Authors: Optional[str] = ""
     Journal: Optional[str] = ""
     Year: Optional[str] = ""
+    PubDate: Optional[str] = ""  # Full date YYYY-MM-DD
     FullTextUsed: bool = False
     AI_EvidenceLevel: str = "Abstract"  # FullText | Abstract | TitleOnly
     PipelineConfidence: str = "Low"     # Low | Medium | Medium-Ambiguous | High | Error
@@ -26,6 +27,17 @@ class BaseRecord(BaseModel):
     MeSH_Terms: Optional[str] = ""      # All descriptor names
     MeSH_Major: Optional[str] = ""      # Major topics only
 
+
+class CompMethods(BaseModel):
+    """Computational methods extracted from full-text papers."""
+    summary_2to3_sentences: str = ""
+    tags: List[str] = []  # From controlled vocab
+    reuse_score_0to5: int = 0
+    assumptions_pitfalls: List[str] = []  # Max 5
+    tools_packages: List[str] = []  # Max 10
+    inputs_outputs: str = ""
+    stats_models: List[str] = []  # Max 5
+
 class Tier1Record(BaseRecord):
     """Schema for Prostate Cancer Triage (Gold Standard)"""
     RelevanceScore: int = 0
@@ -42,6 +54,8 @@ class Tier1Record(BaseRecord):
     # AI-Validated Accessions (subset of candidates confirmed as study's own data)
     GEO_Validated: str = ""
     SRA_Validated: str = ""
+    # Computational Methods (full-text only)
+    comp_methods: Optional[CompMethods] = None
 
 class Tier2Record(BaseRecord):
     """Schema for Methods Discovery"""
