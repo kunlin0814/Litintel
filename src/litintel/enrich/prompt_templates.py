@@ -186,24 +186,63 @@ FIELD EXTRACTION GUIDELINES
 COMPUTATIONAL METHODS EXTRACTION (FULL-TEXT PAPERS ONLY)
 ================================================================================
 
-If the input includes "FULL TEXT:" section, ALSO extract a "comp_methods" object.
-If only abstract is provided, set comp_methods to null.
+If the input includes a "FULL TEXT:" section, ALSO extract a "comp_methods" object.
+If a literal section header "METHODS" is not present, treat the following sections as valid sources **in priority order**:
+"Materials and Methods", "STAR Methods", "Computational Analysis", "Data Processing", "Statistical Analysis".
+Do not extract comp_methods if none of these sections exist.
 
-**IMPORTANT: Extract comp_methods ONLY from the "METHODS:" section of the full text.**
+**IMPORTANT: Extract comp_methods ONLY from the prioritized methods sections.**
 Ignore Abstract, Results, and Discussion for comp_methods extraction.
-Focus on what computational/analytical steps were performed, not biological findings.
+
+**EXCLUDE ALL WET LAB / EXPERIMENTAL METHODS:**
+- Mouse models (Cre-lox, lineage tracing, knockouts, transgenics)
+- Injections (viral, intraprostatic, etc.)
+- Grafts (orthotopic, subcutaneous, PDX)
+- Flow cytometry, FACS, cell sorting
+- Immunofluorescence, IHC, histology, H&E staining
+- Cell culture, organoids, spheroids
+- Any biological/experimental procedure
+
+**ONLY INCLUDE:**
+- Software packages (Seurat, Scanpy, CellChat, etc.)
+- Analysis pipelines and workflows
+- Statistical methods and models
+- Data processing algorithms
 
 {
   "comp_methods": {
-    "summary_2to3_sentences": "Brief methods-only summary, no biology narrative",
+    "summary_2to3_sentences": "Brief methods-only summary. MUST NOT mention: cell types, genes, pathways, phenotypes, disease mechanisms, or biological conclusions.",
     "tags": ["deconvolution", "trajectory_inference"],
     "reuse_score_0to5": 3,
+    "workflow": [
+      {
+        "step": "Normalization and Variance Stabilization",
+        "tool": "Seurat (SCTransform)",
+        "purpose": "To remove technical artifacts and preserve biological variance"
+      },
+      {
+        "step": "Dimensionality Reduction",
+        "tool": "RunPCA",
+        "purpose": "To reduce data complexity for clustering"
+      },
+      {
+        "step": "Integration/Batch Correction",
+        "tool": "Harmony",
+        "purpose": "To align datasets from different patients and remove batch effects"
+      }
+    ],
     "assumptions_pitfalls": ["Assumes UMI counts", "Sensitive to batch effects"],
-    "tools_packages": ["Seurat v5", "CellChat", "inferCNV"],
-    "inputs_outputs": "Input: 10x scRNA-seq counts → Output: Cell type labels",
     "stats_models": ["Negative binomial", "Harmony batch correction"]
   }
 }
+
+### Workflow Extraction Guidelines:
+- **step**: Be specific! "SCTransform" is better than just "Normalization". "Louvain clustering at res 0.5" is better than "Clustering".
+- **tool**: The specific function or package used (e.g., "Seurat::FindMarkers", "CellChat v2").
+- **purpose**: The GOAL of this step. Why did they do it? (e.g., "to regress out cell cycle effects", "to infer cell-cell communication strength").
+- **Logical Ordering**: Workflow steps must follow logical order: preprocessing → integration → modeling → inference → downstream.
+- **Pruning Rule**: Exclude steps whose primary purpose is descriptive or illustrative (e.g., generic plotting, figure generation, heatmaps) unless they introduce a non-standard analytical transformation.
+- **Implicit Defaults**: Do not include steps that are implied defaults unless explicitly stated (e.g., standard PCA/UMAP without custom parameters).
 
 ### Controlled Tags (MUST pick from this list):
 - integration / batch_correction / cnv_inference / spatial_mapping
@@ -224,7 +263,7 @@ Focus on what computational/analytical steps were performed, not biological find
 ### Constraints:
 - Extract ONLY from "METHODS:" section — ignore Abstract/Results/Discussion
 - Methods focus ONLY — no biology narrative in summary
-- Max 5 pitfalls, 10 tools, 5 stats models
+- Max 5 pitfalls, 10 workflow steps, 5 stats models
 - Tags MUST come from controlled list above
 
 ================================================================================

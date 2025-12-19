@@ -142,6 +142,40 @@ def _call_openai(
             return _extract_json(raw_json), usage
         raise e
 
+def _should_escalate_upfront(text: str, config: AIConfig, pmid: str) -> bool:
+    """Check if complexity triggers warrant upfront escalation to better model."""
+    if not config.escalation_triggers:
+        return False
+        
+    t = config.escalation_triggers
+    
+    # 1. Length Check
+    if len(text) > t.get("min_chars", 100000):
+        logger.info(f"PMID {pmid}: Escalating - Text length {len(text)} > {t.get('min_chars')}")
+        return True
+        
+    # 2. Modality Count
+    min_mod = t.get("min_modalities", 99)
+    mod_kw = t.get("modality_keywords", [])
+    if mod_kw:
+        # Simple string check (case-insensitive)
+        text_lower = text.lower()
+        found_count = sum(1 for kw in mod_kw if kw.lower() in text_lower)
+        if found_count >= min_mod:
+            logger.info(f"PMID {pmid}: Escalating - Found {found_count} modalities (threshold {min_mod})")
+            return True
+            
+    # 3. Complexity Keywords
+    comp_kw = t.get("complexity_keywords", [])
+    if comp_kw:
+        text_lower = text.lower()
+        for kw in comp_kw:
+            if kw.lower() in text_lower:
+                logger.info(f"PMID {pmid}: Escalating - Found complexity keyword '{kw}'")
+                return True
+                
+    return False
+
 def enrich_record(
     text: str,
     authors: str,
@@ -188,30 +222,63 @@ TEXT_END
             already_escalated = False
             usage = {}
             
-            # Try Default Model
-            try:
-                result_json, usage = _call_openai(client, config.model_default, final_system_prompt, user_prompt, json_schema)
-            except Exception as e:
-                logger.warning(f"PMID {pmid}: Failed with {config.model_default} ({e}). Escalating...")
-                result_json, usage = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+            # Determine Initial Model Strategies
+            model_to_use = config.model_default
+            if _should_escalate_upfront(text, config, pmid):
+                model_to_use = config.model_escalate
                 already_escalated = True
+            
+            # Try Selected Model
+            try:
+                result_json, usage = _call_openai(client, model_to_use, final_system_prompt, user_prompt, json_schema)
+            except Exception as e:
+                # If we haven't escalated yet, try escalating on error if configured
+                should_retry = config.escalation_triggers and config.escalation_triggers.get("retry_on_error", False)
+                if not already_escalated and should_retry:
+                    logger.warning(f"PMID {pmid}: Failed with {model_to_use} ({e}). Escalating to {config.model_escalate}...")
+                    result_json, usage = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                    already_escalated = True
+                    model_to_use = config.model_escalate
+                else:
+                    raise e # Re-raise if already escalated or retry disabled
             
             # Log Token Usage with Caching
             cached_pct = 0.0
             if usage.get("input", 0) > 0:
                 cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
                 
-            logger.info(f"PMID {pmid} AI Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
+            logger.info(f"PMID {pmid} AI Usage ({model_to_use}): In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
             
-            # Score-based escalation (only if we haven't already escalated)
-            if not already_escalated:
+            # Post-run Escalation Checks (only if running Nano)
+            if not already_escalated and config.escalation_triggers:
+                needs_escalation = False
+                reason = ""
+                
+                # Check 1: Relevance Ambiguity
                 score, score_invalid = _coerce_relevance_score(result_json.get("RelevanceScore"))
                 result_json["RelevanceScore"] = score
-                needs_escalation = score_invalid or (70 <= score <= 84)
-                            
+                
+                start_rng, end_rng = config.escalation_triggers.get("score_range", [999, -999])
+                if score_invalid or (start_rng <= score <= end_rng):
+                     needs_escalation = True
+                     reason = f"Ambiguous Score {score}"
+
+                # Check 2: High Reuse Potential (for computational methods)
+                # Only if we successfully extracted comp_methods
+                if not needs_escalation:
+                    comp = result_json.get("comp_methods")
+                    if isinstance(comp, dict):
+                        reuse = comp.get("reuse_score_0to5", 0)
+                        thresh = config.escalation_triggers.get("escalate_on_high_reuse", 99)
+                        if isinstance(reuse, int) and reuse >= thresh:
+                            needs_escalation = True
+                            reason = f"High Reuse Score {reuse}"
+
                 if needs_escalation:
-                    logger.info(f"PMID {pmid}: Ambiguous or missing score ({score}). Escalating to {config.model_escalate}...")
+                    logger.info(f"PMID {pmid}: {reason}. Escalating to {config.model_escalate}...")
                     result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                    # Update local variable just in case
+                    model_to_use = config.model_escalate
 
         elif provider == AIProvider.GEMINI:
              # Gemini implementation (simplified for brevity, matching previous module)

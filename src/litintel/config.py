@@ -29,6 +29,7 @@ class AIConfig(BaseModel):
     model_escalate: str
     max_chars: int = 80000
     prompt_template: str
+    escalation_triggers: Optional[Dict[str, Any]] = None
 
 class NotionConfig(BaseModel):
     enabled: bool = False

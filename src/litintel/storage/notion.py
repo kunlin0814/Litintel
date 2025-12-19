@@ -79,10 +79,15 @@ def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
     if pmid:
         props["URL"] = {"url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"}
     
-    # PubDate (exact publication date if available, otherwise use Year as YYYY-01-01)
-    year = rec.get("Year")
-    if year and year.isdigit():
-        props["PubDate"] = {"date": {"start": f"{year}-01-01"}}
+    # PubDate (use full date from parsing if available, otherwise fallback to Year-01-01)
+    pub_date = rec.get("PubDate")  # Already in YYYY-MM-DD format from parsing.py
+    if pub_date and len(pub_date) >= 10:  # Valid ISO date format
+        props["PubDate"] = {"date": {"start": pub_date}}
+    else:
+        # Fallback to Year-01-01 if no full date available
+        year = rec.get("Year")
+        if year and str(year).isdigit():
+            props["PubDate"] = {"date": {"start": f"{year}-01-01"}}
     
     # Text Arrays (Multi-select)
     if rec.get("Theme"):

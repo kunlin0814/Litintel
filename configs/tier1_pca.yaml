@@ -41,6 +41,37 @@ ai:
   model_escalate: "gpt-5-mini"
   max_chars: 80000
   prompt_template: "tier1_pca"  # maps to internal template
+  escalation_triggers:
+    score_range: [70, 84]       # Ambiguous relevance -> use mini
+    
+    # Complexity Triggers (Machine Checkable)
+    min_chars: 35000            # >8-10k tokens (approx) -> Complex full text
+    min_modalities: 2           # Requires >=2 keywords below to verify multi-omics
+    modality_keywords:          
+      - "scRNA"
+      - "snRNA"
+      - "scATAC"
+      - "snATAC"
+      - "spatial"
+      - "Visium"
+      - "Xenium"
+      - "CosMx"
+      - "Multiome"
+      - "Multi-omic"
+      - "sc multi-omic"
+      
+    complexity_keywords:        # Mention of these implies complex method development
+      - "custom integration"
+      - "alignment"
+      - "weighting"
+      - "new software"
+      - "benchmarking"
+      - "framework"
+      - "algorithm"
+      
+    # Behavior
+    retry_on_error: true        # Malformed JSON -> retry with mini
+    escalate_on_high_reuse: 3   # If Nano predicts ReuseScore >= 3, re-run with Mini
 
 storage:
   notion:
