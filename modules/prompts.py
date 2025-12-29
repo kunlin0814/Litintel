@@ -33,6 +33,7 @@ You MUST return a JSON object with EXACTLY these fields:
 
 {
   "RelevanceScore": 85,
+  "ReuseScore": 3,
   "WhyRelevant": "One sentence justification",
   "StudySummary": "2-3 sentences describing aim, cohort, and result",
   "PaperRole": "One sentence about paper's contribution",
@@ -182,6 +183,14 @@ FIELD EXTRACTION GUIDELINES
 - Example: "PTEN knockout; Enzalutamide treatment; ERG overexpression; CRISPR screen for AR regulators"
 - Return empty string if no perturbations
 
+### ReuseScore (1-5)
+Rate the paper's data/method reusability for downstream computational work:
+- **1 = Low**: No raw data mentioned; methods section lacks detail; proprietary tools only.
+- **2 = Below Average**: Data may exist but no accession numbers; limited reproducibility info.
+- **3 = Average**: Standard data availability (e.g. GEO accession mentioned); typical methods detail.
+- **4 = Above Average**: Explicit code repository (GitHub/Zenodo); open protocols; multiple datasets shared.
+- **5 = High**: Comprehensive reproducibility package (data + code + containerized workflow); benchmark-ready datasets; novel methods with full documentation.
+
 ================================================================================
 STRICT OUTPUT CONSTRAINTS
 ================================================================================
@@ -189,10 +198,11 @@ STRICT OUTPUT CONSTRAINTS
 1. Return ONLY the JSON object - no markdown, no explanation, no preamble
 2. All string values must be properly escaped (no unescaped quotes or newlines)
 3. RelevanceScore MUST be an integer between 0 and 100
-4. Missing information → empty string (""), never null or "N/A"
-5. Do NOT fabricate information - only extract what is explicitly stated
-6. Keep output compact - no unnecessary whitespace in JSON
-7. All 11 fields are REQUIRED in the output
+4. ReuseScore MUST be an integer between 1 and 5
+5. Missing information → empty string (""), never null or "N/A"
+6. Do NOT fabricate information - only extract what is explicitly stated
+7. Keep output compact - no unnecessary whitespace in JSON
+8. All 12 fields are REQUIRED in the output
 
 ================================================================================
 """

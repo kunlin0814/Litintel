@@ -149,6 +149,7 @@ def _call_gemini_api(user_prompt: str, logger, system_instruction: str) -> Tuple
             "type": "OBJECT",
             "properties": {
                 "RelevanceScore": {"type": "INTEGER"},
+                "ReuseScore": {"type": "INTEGER"},
                 "WhyRelevant": {"type": "STRING"},
                 "StudySummary": {"type": "STRING"},
                 "PaperRole": {"type": "STRING"},
@@ -162,6 +163,7 @@ def _call_gemini_api(user_prompt: str, logger, system_instruction: str) -> Tuple
             },
             "required": [
                 "RelevanceScore",
+                "ReuseScore",
                 "WhyRelevant",
                 "StudySummary",
                 "PaperRole",
@@ -211,6 +213,10 @@ def _call_openai_api(user_prompt: str, logger, system_instruction: str, model_na
                     "type": "integer",
                     "description": "Relevance score from 0-100"
                 },
+                "ReuseScore": {
+                    "type": "integer",
+                    "description": "Data/method reusability score from 1-5"
+                },
                 "WhyRelevant": {
                     "type": "string",
                     "description": "1 sentence explaining the score"
@@ -254,6 +260,7 @@ def _call_openai_api(user_prompt: str, logger, system_instruction: str, model_na
             },
             "required": [
                 "RelevanceScore",
+                "ReuseScore",
                 "WhyRelevant",
                 "StudySummary",
                 "PaperRole",
@@ -445,129 +452,200 @@ def ai_enrich_records(
             if provider == "gemini":
                 parsed, output_tokens = _call_gemini_api(user_prompt, logger, system_instruction)
             else:  # openai
-                # Try 1: Default Model (Nano)
-                try:
-                    parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=DEFAULT_MODEL)
+                # =====================================================================
+                # PRE-EMPTIVE COMPLEXITY CHECK (BEFORE calling any model)
+                # =====================================================================
+                triggers = cfg.get("ai", {}).get("escalation_triggers", {})
+                use_escalation_model = False  # Flag to skip Nano entirely
+                
+                # A. Length Check
+                min_chars = triggers.get("min_chars")
+                if min_chars and len(text_to_analyze) >= int(min_chars):
+                    use_escalation_model = True
+                    logger.info(f"PMID {pmid}: PRE-EMPTIVE ESCALATION (Length={len(text_to_analyze)} >= {min_chars}). Skipping {DEFAULT_MODEL}, using {ESCALATION_MODEL} directly.")
+                
+                # B. Modality Count Check
+                if not use_escalation_model:
+                    min_mods = triggers.get("min_modalities")
+                    if min_mods:
+                        keywords = triggers.get("modality_keywords", [])
+                        text_lower = text_to_analyze.lower()
+                        mod_count = 0
+                        found_mods = []
+                        for kw in keywords:
+                            if kw.lower() in text_lower:
+                                mod_count += 1
+                                found_mods.append(kw)
+                        
+                        if mod_count >= int(min_mods):
+                            use_escalation_model = True
+                            logger.info(f"PMID {pmid}: PRE-EMPTIVE ESCALATION (Multi-modal: {mod_count} >= {min_mods} keywords: {found_mods}). Skipping {DEFAULT_MODEL}, using {ESCALATION_MODEL} directly.")
+                
+                # =====================================================================
+                # MODEL CALL
+                # =====================================================================
+                if use_escalation_model:
+                    # Skip Nano entirely, go straight to Mini
+                    parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=ESCALATION_MODEL)
                     
                     # Update global stats
                     total_input_tokens += input_tokens
                     total_cached_tokens += cached_tokens
                     
                     # Update model stats
-                    if DEFAULT_MODEL not in model_stats:
-                        model_stats[DEFAULT_MODEL] = {"input": 0, "output": 0, "cached": 0}
-                    model_stats[DEFAULT_MODEL]["input"] += input_tokens
-                    model_stats[DEFAULT_MODEL]["output"] += output_tokens
-                    model_stats[DEFAULT_MODEL]["cached"] += cached_tokens
-
-                    # Log actual cache metrics
+                    if ESCALATION_MODEL not in model_stats:
+                        model_stats[ESCALATION_MODEL] = {"input": 0, "output": 0, "cached": 0}
+                    model_stats[ESCALATION_MODEL]["input"] += input_tokens
+                    model_stats[ESCALATION_MODEL]["output"] += output_tokens
+                    model_stats[ESCALATION_MODEL]["cached"] += cached_tokens
+                    
                     cache_pct = (cached_tokens / input_tokens * 100) if input_tokens > 0 else 0
                     logger.info(
                         f"PMID {pmid}: {input_tokens:,} input | {cached_tokens:,} cached ({cache_pct:.0f}%) | "
-                        f"{output_tokens:,} output using {DEFAULT_MODEL}"
+                        f"{output_tokens:,} output using {ESCALATION_MODEL} (direct)"
                     )
-                    
-                    # Escalation Check
-                    rel_score = parsed.get("RelevanceScore")
-                    needs_escalation = False
-                    
-                    # Treat None/Missing as reason to escalate
-                    if rel_score is None:
-                        needs_escalation = True
-                        rel_score = 0
-                    else:
-                        try:
-                            rel_score = int(rel_score)
-                        except (ValueError, TypeError):
-                            needs_escalation = True
-                            rel_score = 0
-
-                    # Trigger 1: Ambiguous Score (70-84) - matches "limited spatial/single-cell" tier
-                    if 70 <= rel_score <= 84:
-                        needs_escalation = True
-                        logger.warning(f"PMID {pmid}: Ambiguous score ({rel_score}) with {DEFAULT_MODEL}. Escalating...")
-                        
-                    # Trigger 2: Parsing Failure or Empty (Handled by exception/defaults usually, but check parsed dict)
-                    if not parsed or parsed.get("WhyRelevant") == "Analysis failed or returned empty.":
-                        needs_escalation = True
-                        
-                    if needs_escalation:
-                        # Try 2: Escalation Model (Mini)
-                        logger.info(f"Escalating PMID {pmid} to {ESCALATION_MODEL} for better reasoning...")
-                        parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=ESCALATION_MODEL)
+                else:
+                    # Try Nano first
+                    try:
+                        parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=DEFAULT_MODEL)
                         
                         # Update global stats
                         total_input_tokens += input_tokens
                         total_cached_tokens += cached_tokens
                         
                         # Update model stats
-                        if ESCALATION_MODEL not in model_stats:
-                            model_stats[ESCALATION_MODEL] = {"input": 0, "output": 0, "cached": 0}
-                        model_stats[ESCALATION_MODEL]["input"] += input_tokens
-                        model_stats[ESCALATION_MODEL]["output"] += output_tokens
-                        model_stats[ESCALATION_MODEL]["cached"] += cached_tokens
-                        
+                        if DEFAULT_MODEL not in model_stats:
+                            model_stats[DEFAULT_MODEL] = {"input": 0, "output": 0, "cached": 0}
+                        model_stats[DEFAULT_MODEL]["input"] += input_tokens
+                        model_stats[DEFAULT_MODEL]["output"] += output_tokens
+                        model_stats[DEFAULT_MODEL]["cached"] += cached_tokens
+
+                        # Log actual cache metrics
                         cache_pct = (cached_tokens / input_tokens * 100) if input_tokens > 0 else 0
                         logger.info(
-                            f"PMID {pmid} Escalation: {input_tokens:,} input | {cached_tokens:,} cached ({cache_pct:.0f}%) | "
-                            f"{output_tokens:,} output using {ESCALATION_MODEL}"
+                            f"PMID {pmid}: {input_tokens:,} input | {cached_tokens:,} cached ({cache_pct:.0f}%) | "
+                            f"{output_tokens:,} output using {DEFAULT_MODEL}"
                         )
                         
-                except Exception as e_nano:
-                    # Check if it's an OpenAI rate limit (429)
-                    error_str = str(e_nano).lower()
-                    if "429" in error_str or "rate limit" in error_str:
-                        logger.warning(f"PMID {pmid}: Rate limit with {DEFAULT_MODEL}. Retrying with backoff...")
-                        # Simple retry with backoff
-                        for retry in range(3):
-                            wait_time = 2 ** retry  # 1s, 2s, 4s
-                            time.sleep(wait_time)
+                        # =====================================================================
+                        # POST-RESPONSE ESCALATION CHECK
+                        # =====================================================================
+                        rel_score = parsed.get("RelevanceScore")
+                        needs_escalation = False
+                        
+                        # Treat None/Missing as reason to escalate
+                        if rel_score is None:
+                            needs_escalation = True
+                            rel_score = 0
+                        else:
                             try:
-                                parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=DEFAULT_MODEL)
-                                
-                                # Update global stats
-                                total_input_tokens += input_tokens
-                                total_cached_tokens += cached_tokens
-                                
-                                # Update model stats
-                                if DEFAULT_MODEL not in model_stats:
-                                    model_stats[DEFAULT_MODEL] = {"input": 0, "output": 0, "cached": 0}
-                                model_stats[DEFAULT_MODEL]["input"] += input_tokens
-                                model_stats[DEFAULT_MODEL]["output"] += output_tokens
-                                model_stats[DEFAULT_MODEL]["cached"] += cached_tokens
-                                
-                                logger.info(f"PMID {pmid}: Retry {retry+1} succeeded.")
-                                break
-                            except Exception as e_retry:
-                                if retry == 2:  # Last retry
-                                    logger.warning(f"PMID {pmid}: All retries failed. Escalating to {ESCALATION_MODEL}...")
-                                    parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=ESCALATION_MODEL)
+                                rel_score = int(rel_score)
+                            except (ValueError, TypeError):
+                                needs_escalation = True
+                                rel_score = 0
+
+                        # Trigger 1: Ambiguous Score (configurable range from YAML)
+                        score_range = triggers.get("score_range", [70, 84])
+                        score_low = score_range[0] if len(score_range) > 0 else 70
+                        score_high = score_range[1] if len(score_range) > 1 else 84
+                        if score_low <= rel_score <= score_high:
+                            needs_escalation = True
+                            logger.warning(f"PMID {pmid}: Ambiguous score ({rel_score}) in range [{score_low}-{score_high}] with {DEFAULT_MODEL}. Escalating...")
+                            
+                        # Trigger 2: Parsing Failure or Empty
+                        if not parsed or parsed.get("WhyRelevant") == "Analysis failed or returned empty.":
+                            needs_escalation = True
+                            
+                        # Trigger 3: High ReuseScore
+                        reuse_threshold = triggers.get("escalate_on_high_reuse")
+                        if reuse_threshold and not needs_escalation:
+                            reuse_score = parsed.get("ReuseScore")
+                            if reuse_score is not None:
+                                try:
+                                    reuse_score = int(reuse_score)
+                                    if reuse_score >= int(reuse_threshold):
+                                        needs_escalation = True
+                                        logger.info(f"PMID {pmid}: High ReuseScore ({reuse_score} >= {reuse_threshold}). Escalating for better methods extraction...")
+                                except (ValueError, TypeError):
+                                    pass  # Ignore unparseable ReuseScore
+                            
+                        if needs_escalation:
+                            # Try 2: Escalation Model (Mini)
+                            logger.info(f"Escalating PMID {pmid} to {ESCALATION_MODEL} for better reasoning...")
+                            parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=ESCALATION_MODEL)
+                            
+                            # Update global stats
+                            total_input_tokens += input_tokens
+                            total_cached_tokens += cached_tokens
+                            
+                            # Update model stats
+                            if ESCALATION_MODEL not in model_stats:
+                                model_stats[ESCALATION_MODEL] = {"input": 0, "output": 0, "cached": 0}
+                            model_stats[ESCALATION_MODEL]["input"] += input_tokens
+                            model_stats[ESCALATION_MODEL]["output"] += output_tokens
+                            model_stats[ESCALATION_MODEL]["cached"] += cached_tokens
+                            
+                            cache_pct = (cached_tokens / input_tokens * 100) if input_tokens > 0 else 0
+                            logger.info(
+                                f"PMID {pmid} Escalation: {input_tokens:,} input | {cached_tokens:,} cached ({cache_pct:.0f}%) | "
+                                f"{output_tokens:,} output using {ESCALATION_MODEL}"
+                            )
+                        
+                    except Exception as e_nano:
+                        # Check if it's an OpenAI rate limit (429)
+                        error_str = str(e_nano).lower()
+                        if "429" in error_str or "rate limit" in error_str:
+                            logger.warning(f"PMID {pmid}: Rate limit with {DEFAULT_MODEL}. Retrying with backoff...")
+                            # Simple retry with backoff
+                            for retry in range(3):
+                                wait_time = 2 ** retry  # 1s, 2s, 4s
+                                time.sleep(wait_time)
+                                try:
+                                    parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=DEFAULT_MODEL)
                                     
                                     # Update global stats
                                     total_input_tokens += input_tokens
                                     total_cached_tokens += cached_tokens
                                     
                                     # Update model stats
-                                    if ESCALATION_MODEL not in model_stats:
-                                        model_stats[ESCALATION_MODEL] = {"input": 0, "output": 0, "cached": 0}
-                                    model_stats[ESCALATION_MODEL]["input"] += input_tokens
-                                    model_stats[ESCALATION_MODEL]["output"] += output_tokens
-                                    model_stats[ESCALATION_MODEL]["cached"] += cached_tokens
-                    else:
-                        # Other errors: escalate to better model
-                        logger.warning(f"PMID {pmid}: Failed with {DEFAULT_MODEL} ({e_nano}). Escalating to {ESCALATION_MODEL}...")
-                        parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=ESCALATION_MODEL)
-                        
-                        # Update global stats
-                        total_input_tokens += input_tokens
-                        total_cached_tokens += cached_tokens
-                        
-                        # Update model stats
-                        if ESCALATION_MODEL not in model_stats:
-                            model_stats[ESCALATION_MODEL] = {"input": 0, "output": 0, "cached": 0}
-                        model_stats[ESCALATION_MODEL]["input"] += input_tokens
-                        model_stats[ESCALATION_MODEL]["output"] += output_tokens
-                        model_stats[ESCALATION_MODEL]["cached"] += cached_tokens
+                                    if DEFAULT_MODEL not in model_stats:
+                                        model_stats[DEFAULT_MODEL] = {"input": 0, "output": 0, "cached": 0}
+                                    model_stats[DEFAULT_MODEL]["input"] += input_tokens
+                                    model_stats[DEFAULT_MODEL]["output"] += output_tokens
+                                    model_stats[DEFAULT_MODEL]["cached"] += cached_tokens
+                                    
+                                    logger.info(f"PMID {pmid}: Retry {retry+1} succeeded.")
+                                    break
+                                except Exception as e_retry:
+                                    if retry == 2:  # Last retry
+                                        logger.warning(f"PMID {pmid}: All retries failed. Escalating to {ESCALATION_MODEL}...")
+                                        parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=ESCALATION_MODEL)
+                                        
+                                        # Update global stats
+                                        total_input_tokens += input_tokens
+                                        total_cached_tokens += cached_tokens
+                                        
+                                        # Update model stats
+                                        if ESCALATION_MODEL not in model_stats:
+                                            model_stats[ESCALATION_MODEL] = {"input": 0, "output": 0, "cached": 0}
+                                        model_stats[ESCALATION_MODEL]["input"] += input_tokens
+                                        model_stats[ESCALATION_MODEL]["output"] += output_tokens
+                                        model_stats[ESCALATION_MODEL]["cached"] += cached_tokens
+                        else:
+                            # Other errors: escalate to better model
+                            logger.warning(f"PMID {pmid}: Failed with {DEFAULT_MODEL} ({e_nano}). Escalating to {ESCALATION_MODEL}...")
+                            parsed, output_tokens, input_tokens, cached_tokens = _call_openai_api(user_prompt, logger, system_instruction, model_name=ESCALATION_MODEL)
+                            
+                            # Update global stats
+                            total_input_tokens += input_tokens
+                            total_cached_tokens += cached_tokens
+                            
+                            # Update model stats
+                            if ESCALATION_MODEL not in model_stats:
+                                model_stats[ESCALATION_MODEL] = {"input": 0, "output": 0, "cached": 0}
+                            model_stats[ESCALATION_MODEL]["input"] += input_tokens
+                            model_stats[ESCALATION_MODEL]["output"] += output_tokens
+                            model_stats[ESCALATION_MODEL]["cached"] += cached_tokens
 
             total_output_tokens += output_tokens
             
