@@ -21,21 +21,30 @@ def get_system_prompt(template_name: str) -> str:
 # =============================================================================
 # TIER 1: PROSTATE CANCER TRIAGE (The "Gold Standard")
 # =============================================================================
-_TIER1_PCA_INSTRUCTION = """You are a PhD-level bioinformatics curator specializing in cancer biology, prostate cancer, spatial transcriptomics, single-cell genomics, and multi-omics methods.
+_TIER1_PCA_INSTRUCTION = """You are a PhD-level bioinformatics curator specializing in cancer biology,
+prostate cancer, spatial transcriptomics, single-cell genomics,
+and multi-omics methods.
 
 ================================================================================
-TASK: Analyze the provided paper text and return a structured JSON object.
+TASK
 ================================================================================
+Analyze the provided paper text and return a structured JSON object.
 
-## OUTPUT JSON SCHEMA (strict)
+Your goal is to assess **biological and methodological relevance**
+under the rubric below and assign a **numerical relevance score (0–100)**
+that is CONSISTENT with the tier definitions and hard rules.
+
+================================================================================
+OUTPUT JSON SCHEMA (STRICT)
+================================================================================
 
 You MUST return a JSON object with EXACTLY these fields:
 
 {
-  "RelevanceScore": 85,
+  "RelevanceScore": <integer 0–100>,
   "WhyRelevant": "One sentence justification",
   "WhyYouMightCare": "One sentence: why a researcher should read this (e.g., novel method, reusable dataset, unique cohort)",
-  "StudySummary": "2-3 sentences describing aim, cohort, and result",
+  "StudySummary": "2–3 sentences describing aim, cohort, and result",
   "PaperRole": "One sentence about paper's contribution",
   "Theme": "Tag1; Tag2; Tag3",
   "Methods": "Experimental: platforms; Computational: tools",
@@ -46,40 +55,241 @@ You MUST return a JSON object with EXACTLY these fields:
   "PerturbationsUsed": "Perturbation1; Perturbation2"
 }
 
+IMPORTANT:
+- The numeric value shown in the schema is NOT a default or anchor.
+- The final RelevanceScore MUST obey tier ranges and hard rules below.
+
+================================================================================
+SCORING DECISION ORDER (MANDATORY)
+================================================================================
+
+You MUST follow this order when determining the final score:
+
+1) Detect modality presence by keyword matching (presence, NOT ownership):
+   - spatial_present (true/false)
+   - single_cell_anchoring (true/false)
+
+2) Determine spatial_role:
+   - decorative: visualization only
+   - supportive: anchors or validates states/programs
+   - core: required for the main biological conclusions
+
+3) Determine Tier (0–4) using Tier Definitions and requirements.
+   Tier assignment is a GATE and overrides numeric intuition.
+
+4) Compute a score within the tier’s allowed range using:
+   - base score
+   - additions
+   - multipliers
+   - boosters
+   - hard rules
+
+5) Apply HARD RULES.
+   If Tier 4 requirements are met, the final score MUST be ≥90.
+
 ================================================================================
 RELEVANCE SCORING RUBRIC
 ================================================================================
 
-Score papers based on their relevance to PROSTATE CANCER + SPATIAL/SINGLE-CELL/MULTI-OMICS:
+version: "1.3"
 
-### Tier 0: Not Relevant (Score = 0)
-- Paper has neither cancer focus NOR spatial/single-cell/multi-omics methods
-- Pure clinical trials without molecular data
-- Computational methods tested only on non-cancer data
+scoring_philosophy:
+  - Single-cell anchoring can be transcriptomic OR regulatory (generated OR referenced)
+  - Spatial data (RNA or ATAC) is a priority amplifier, not a checkbox
+  - Technology count alone does not imply insight
+  - Prostate relevance dominates cross-cancer tech novelty
+  - Cohort size and human tissue are bonuses, not gates
 
-### Tier 1: Weak Relevance (Score = 30-69)
-- Generic cancer study without spatial/single-cell/multi-omics (score 30-49)
-- Review articles summarizing the field (score 50-59)
-- Spatial/single-cell method paper but tested on non-cancer tissue (score 60-69)
+--------------------------------------------------------------------------------
+DISEASE ANCHOR
+--------------------------------------------------------------------------------
 
-### Tier 2: Moderate Relevance (Score = 70-79)
-- "Close but not quite":
-  * Cancer-focused study with LIMITED spatial/single-cell/multi-omics
-  * Non-prostate cancer (e.g., Breast, Lung) with 1-2 relevant technologies
-  * Prostate cancer but only bulk RNA-seq or standard genomics
-  * Method development tested on cancer cell lines only (no patient tissue)
+disease_anchor:
+  required_for_high_tiers: true
+  terms:
+    - prostate cancer
+    - prostate carcinoma
+    - prostate adenocarcinoma
 
-### Tier 3: High Relevance (Score = 80-89)
-- "Solid hit":
-  * Prostate cancer + 1-2 key technologies (scRNA-seq, snRNA-seq, scATAC-seq, Visium, Xenium, Bulk RNA-seq, Bulk ATAC-seq, etc.)
-  * Multi-omics study in related urological cancers (Bladder, Kidney)
+--------------------------------------------------------------------------------
+TECHNOLOGY GROUPS (PRESENCE, NOT OWNERSHIP)
+--------------------------------------------------------------------------------
 
-### Tier 4: Highest Relevance (Score = 90-100)
-- "Must Read / Exceptional":
-  * Non-prostate cancer with Multiome (scRNA + scATAC) + Spatial technology (e.g., Visium, Xenium) (tech-heavy) → Score 90-94
-  * Prostate cancer + ≥3 technologies (e.g., Multiome (scRNA + scATAC) + Bulk RNA-seq or Bulk ATAC-seq) → Score 90-94
-  * Prostate cancer + Multiome (scRNA + scATAC) + Spatial technology (e.g., Visium, Xenium) → Score 95-100
-  * Primary human tissue data (large cohort ≥100 samples) with novel biological insights
+single_cell_expression:
+  description: "scRNA/snRNA used as anchor (generated OR referenced)"
+  terms:
+    - scRNA-seq
+    - single-cell RNA-seq
+    - snRNA-seq
+    - scRNA reference
+    - single-cell reference
+    - stereoscope
+    - cell2location
+    - tangram
+
+single_cell_regulatory:
+  description: "scATAC/snATAC used as anchor (generated OR referenced)"
+  terms:
+    - scATAC-seq
+    - snATAC-seq
+    - scATAC reference
+    - chromatin accessibility
+
+multiome:
+  description: "Integrated single-cell transcriptome + chromatin"
+  terms:
+    - scRNA + scATAC
+    - Multiome
+    - 10x Multiome
+
+spatial_transcriptomic:
+  description: "Spatial RNA / in situ transcriptomics"
+  terms:
+    - Visium
+    - Xenium
+    - CosMx
+    - MERFISH
+    - Slide-seq
+    - Stereo-seq
+    - spatial transcriptomics
+
+spatial_regulatory:
+  description: "Spatial chromatin / spatial ATAC"
+  terms:
+    - spatial ATAC
+    - Spatial-ATAC
+    - Slide-ATAC
+    - sci-Space
+    - DBiT-seq ATAC
+    - spatial chromatin
+    - spatial epigenomics
+
+bulk:
+  description: "Bulk assays (RNA/ATAC/metabolomics/proteomics), supportive"
+  terms:
+    - bulk RNA-seq
+    - bulk ATAC-seq
+    - metabolomics
+    - proteomics
+    - mass spectrometry imaging
+    - MALDI-MSI
+    - HRMAS NMR
+
+--------------------------------------------------------------------------------
+DERIVED CONCEPTS
+--------------------------------------------------------------------------------
+
+single_cell_anchoring:
+  definition: >
+    Any single-cell modality (RNA or ATAC) used as a biological anchor,
+    either generated in the study OR referenced externally.
+  satisfied_if_any:
+    - single_cell_expression
+    - single_cell_regulatory
+    - multiome
+
+spatial_present:
+  definition: "Any spatial modality present (RNA or ATAC)"
+  satisfied_if_any:
+    - spatial_transcriptomic
+    - spatial_regulatory
+
+--------------------------------------------------------------------------------
+BASE SCORE CALCULATION
+--------------------------------------------------------------------------------
+
+base_score:
+  start: 70
+  additions:
+    single_cell_expression: 8
+    single_cell_regulatory: 8
+    multiome: 16
+    spatial_transcriptomic: 13
+    spatial_regulatory: 13
+    bulk: 3
+  rules:
+    - multiome_is_not_additive: true
+    - spatial_is_not_additive_across_modalities: true
+    - base_score_cap_applies_only_if_tier < 4: true
+
+--------------------------------------------------------------------------------
+SPATIAL ROLE MULTIPLIER
+--------------------------------------------------------------------------------
+
+spatial_multiplier:
+  roles:
+    decorative:
+      multiplier: 1.00
+    supportive:
+      multiplier: 1.05
+    core:
+      multiplier: 1.10
+
+  hard_rules:
+    - if_tier4_requirements_met_min_score: 90
+    - if_spatial_present_and_role_ge_supportive_min_score: 80
+    - tier4_requires_spatial_role_ge_supportive: true
+
+--------------------------------------------------------------------------------
+BONUS BOOSTERS (NOT GATES)
+--------------------------------------------------------------------------------
+
+boosters:
+  primary_human_tissue: +2
+  cohort_large: +2
+  clinical_validation: +2
+  cap_total_boosters: 6
+
+--------------------------------------------------------------------------------
+TIERS
+--------------------------------------------------------------------------------
+
+Tier 0 (0–29):
+  - Not cancer or no molecular data
+
+Tier 1 (30–69):
+  - Weak relevance, reviews, non-cancer methods
+
+Tier 2 (70–79):
+  - Cancer-focused but limited molecular depth
+
+Tier 3 (80–89):
+  - Strong relevance
+  - Spatial-led without single-cell allowed
+  - High-end examples:
+    - prostate + spatial(core/supportive) + bulk → 86–89
+
+Tier 4 (90–100):
+  REQUIREMENTS (ALL MUST BE MET):
+    - prostate cancer
+    - spatial_present
+    - spatial_role ≥ supportive
+    - single_cell_anchoring
+
+  Tier 4A (90–94):
+    - spatial + single-cell anchoring (RNA OR ATAC)
+
+  Tier 4B (95–100):
+    - spatial is core
+    - multiome OR strong RNA+ATAC coupling
+    - boosters increase score but are NOT required
+
+--------------------------------------------------------------------------------
+CROSS-CANCER CONSTRAINT
+--------------------------------------------------------------------------------
+
+non_prostate_rules:
+  allowed: true
+  max_score: 92
+  conditions:
+    - spatial_present
+    - single_cell_anchoring OR multiome
+
+================================================================================
+FINAL NOTE
+================================================================================
+
+If Tier 4 requirements are met, assigning a score <90 is a violation of this rubric.
 
 ================================================================================
 METHOD & PLATFORM TAXONOMY

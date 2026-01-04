@@ -175,8 +175,16 @@ def run_tier1_pipeline(config: AppConfig):
         
         # Build enrichment text: Title + Abstract + PMC (if available)
         enrich_text = f"Title: {rec['Title']}\nAbstract: {rec['Abstract']}"
-        if rec.get("PMC_FullText"):
-            enrich_text += f"\n\nFULL TEXT:\n{rec['PMC_FullText'][:10000]}"  # Limit to 10k chars
+        if rec.get("PMC_Methods") or rec.get("PMC_Results"):
+            # Prioritize extracted sections if available
+            # OpenAI 128k context ~ 500k chars. We use conservative limits to leave room for output.
+            if rec.get("PMC_Methods"):
+                enrich_text += f"\n\nMETHODS:\n{rec['PMC_Methods'][:100000]}"
+            if rec.get("PMC_Results"):
+                enrich_text += f"\n\nRESULTS:\n{rec['PMC_Results'][:100000]}"
+        elif rec.get("PMC_FullText"):
+            # Fallback to raw full text
+            enrich_text += f"\n\nFULL TEXT:\n{rec['PMC_FullText'][:200000]}"  # 200k chars ~ 50k tokens
 
         enrichment = enrich_record(
             text=enrich_text,
