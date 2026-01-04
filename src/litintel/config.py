@@ -23,13 +23,31 @@ class DiscoveryConfig(BaseModel):
     retmax: int = 30
     reldays: int = 365
 
+class EscalationTriggersConfig(BaseModel):
+    """Configuration for heuristic-based escalation to Shadow Judge."""
+    # H2: Score range triggering escalation
+    score_range: List[int] = [70, 79]
+    # H1: Short rationale threshold
+    min_rationale_length: int = 50
+    # H4: High reuse score threshold
+    escalate_on_high_reuse: int = 4
+    # H3: Text/score mismatch thresholds
+    h3_high_score_thresh: int = 80
+    h3_low_score_thresh: int = 70
+    # Upfront escalation (complexity-based)
+    min_chars: Optional[int] = None
+    min_modalities: Optional[int] = None
+    modality_keywords: List[str] = []
+    # Behavior
+    retry_on_error: bool = True
+
 class AIConfig(BaseModel):
     provider: AIProvider
     model_default: str
     model_escalate: str
     max_chars: int = 80000
     prompt_template: str
-    escalation_triggers: Optional[Dict[str, Any]] = None
+    escalation_triggers: Optional[EscalationTriggersConfig] = None
 
 class NotionConfig(BaseModel):
     enabled: bool = False

@@ -1,4 +1,3 @@
-
 import unittest
 from unittest.mock import MagicMock, patch
 import sys
@@ -13,29 +12,19 @@ from src.litintel.config import AIConfig, AIProvider
 class TestLitIntelAIClient(unittest.TestCase):
     @patch('src.litintel.enrich.ai_client._get_openai_client')
     @patch('src.litintel.enrich.ai_client._call_openai')
-    def test_enrich_record_escalates_on_none_score(self, mock_call_openai, mock_get_client):
-        # Setup
+    def test_enrich_record_normalizes_none_score_to_zero(self, mock_call_openai, mock_get_client):
+        """Test that None RelevanceScore is normalized to 0 (no escalation in new flow)."""
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         
-        # Mock responses
-        # First call (nano) returns None score
-        response_nano = {
+        usage = {"input": 100, "output": 50, "cached": 10}
+        # Returns None score - should be normalized to 0
+        response = {
             "RelevanceScore": None,
-            "WhyRelevant": "Failed parsing",
-        }
-        # Second call (escalation) returns valid score
-        response_escalated = {
-            "RelevanceScore": 85,
-            "WhyRelevant": "Escalated Success",
-            "PipelineConfidence": "Medium"
+            "WhyRelevant": "Some reason",
         }
         
-        # side_effect allows returning different values for consecutive calls
-        mock_call_openai.side_effect = [
-            (response_nano, 100),       # 1st call: Nano -> None
-            (response_escalated, 200)   # 2nd call: Escalated -> 85
-        ]
+        mock_call_openai.return_value = (response, usage)
         
         config = AIConfig(
             provider=AIProvider.OPENAI,
@@ -45,7 +34,6 @@ class TestLitIntelAIClient(unittest.TestCase):
             prompt_template="Dummy Prompt"
         )
         
-        # Execute
         result = enrich_record(
             text="Test text",
             authors="Test Authors",
@@ -56,28 +44,26 @@ class TestLitIntelAIClient(unittest.TestCase):
             pydantic_model=None
         )
         
-        # Verify
-        self.assertEqual(mock_call_openai.call_count, 2)
-        # Check that the second call was made with the escalation model
-        args_call_2 = mock_call_openai.call_args_list[1]
-        self.assertEqual(args_call_2[0][1], "gpt-5-mini") # model arg is 2nd pos
-        
-        self.assertEqual(result["RelevanceScore"], 85)
-        self.assertEqual(result["WhyRelevant"], "Escalated Success")
-        print("Test passed: LitIntel AI Client Escalates on None Score")
+        # New behavior: single call, score normalized to 0
+        self.assertEqual(mock_call_openai.call_count, 1)
+        self.assertEqual(result["RelevanceScore"], 0)
+        self.assertEqual(result["WhyRelevant"], "Some reason")
 
     @patch('src.litintel.enrich.ai_client._get_openai_client')
     @patch('src.litintel.enrich.ai_client._call_openai')
-    def test_enrich_record_normalizes_none_score_to_zero(self, mock_call_openai, mock_get_client):
+    def test_enrich_record_returns_valid_score(self, mock_call_openai, mock_get_client):
+        """Test that valid scores are returned correctly."""
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-
-        # Both default and escalated calls return None for RelevanceScore
-        mock_call_openai.side_effect = [
-            ({"RelevanceScore": None, "WhyRelevant": "First try"}, 100),
-            ({"RelevanceScore": None, "WhyRelevant": "Second try"}, 200),
-        ]
-
+        
+        usage = {"input": 100, "output": 50, "cached": 10}
+        response = {
+            "RelevanceScore": 85,
+            "WhyRelevant": "Valid reason",
+        }
+        
+        mock_call_openai.return_value = (response, usage)
+        
         config = AIConfig(
             provider=AIProvider.OPENAI,
             model_default="gpt-5-nano",
@@ -85,7 +71,7 @@ class TestLitIntelAIClient(unittest.TestCase):
             max_chars=1000,
             prompt_template="Dummy Prompt"
         )
-
+        
         result = enrich_record(
             text="Test text",
             authors="Test Authors",
@@ -95,10 +81,10 @@ class TestLitIntelAIClient(unittest.TestCase):
             json_schema={},
             pydantic_model=None
         )
-
-        self.assertEqual(mock_call_openai.call_count, 2)
-        self.assertEqual(result["RelevanceScore"], 0)
-        self.assertEqual(result["WhyRelevant"], "Second try")
+        
+        self.assertEqual(mock_call_openai.call_count, 1)
+        self.assertEqual(result["RelevanceScore"], 85)
+        self.assertEqual(result["WhyRelevant"], "Valid reason")
 
 if __name__ == '__main__':
     unittest.main()

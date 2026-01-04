@@ -61,26 +61,32 @@ def save_csv(records: List[Dict[str, Any]], filename: str):
     logger.info(f"Saved {len(records)} records to {filename}")
 
 
+def normalize_text(text) -> str:
+    """Normalize Unicode characters for readability.
+    
+    Replaces curly quotes, fancy dashes, and special spaces with ASCII equivalents.
+    Can be imported by other modules (e.g., drive.py).
+    """
+    if not isinstance(text, str):
+        return str(text) if text else ""
+    # Replace curly quotes and fancy chars with ASCII
+    replacements = {
+        ''': "'", ''': "'", '"': '"', '"': '"',
+        '–': '-', '—': '-', '…': '...',
+        '\u2009': ' ', '\u00a0': ' ',  # thin/non-breaking spaces
+        '≤': '<=', '≥': '>=', '±': '+/-',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
 def save_markdown(records: List[Dict[str, Any]], filename: str):
     """Save records to Markdown format for human review."""
     if not records:
         return
     
-    # Normalize Unicode characters for readability
-    def normalize_text(text):
-        if not isinstance(text, str):
-            return str(text) if text else ""
-        # Replace curly quotes and fancy chars with ASCII
-        replacements = {
-            ''': "'", ''': "'", '"': '"', '"': '"',
-            '–': '-', '—': '-', '…': '...',
-            '\u2009': ' ', '\u00a0': ' ',  # thin/non-breaking spaces
-            '≤': '<=', '≥': '>=', '±': '+/-',
-        }
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        return text
-    
+    # Uses module-level normalize_text function
     lines = []
     lines.append(f"# Pipeline Output: {len(records)} Papers\n")
     lines.append(f"_Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}_\n")

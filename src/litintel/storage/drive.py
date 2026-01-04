@@ -20,6 +20,8 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import google.auth
 
+from litintel.pipeline.shared import normalize_text
+
 logger = logging.getLogger(__name__)
 
 # Define scopes
@@ -288,15 +290,15 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
     lines = []
     lines.append("---")
     lines.append(f"## PMID: {rec.get('PMID')} — {rec.get('Journal', 'Unknown')} ({rec.get('Year', 'N/A')})")
-    lines.append(f"**Title**: {rec.get('Title', 'Untitled')}")
-    lines.append(f"**Authors**: {rec.get('Authors', '')}")
+    lines.append(f"**Title**: {normalize_text(rec.get('Title', 'Untitled'))}")
+    lines.append(f"**Authors**: {normalize_text(rec.get('Authors', ''))}")
     lines.append(f"**Published**: {rec.get('PubDate', rec.get('Year', 'N/A'))}")
-    lines.append(f"**Group**: {rec.get('Group', '')}")
+    lines.append(f"**Group**: {normalize_text(rec.get('Group', ''))}")
     lines.append(f"**RelevanceScore**: {rec.get('RelevanceScore')}")
     lines.append(f"**PipelineConfidence**: {rec.get('PipelineConfidence', 'N/A')}")
     lines.append("")
-    lines.append(f"**PaperRole**: {rec.get('PaperRole', '')}")
-    lines.append(f"**Theme**: {rec.get('Theme', '')}")
+    lines.append(f"**PaperRole**: {normalize_text(rec.get('PaperRole', ''))}")
+    lines.append(f"**Theme**: {normalize_text(rec.get('Theme', ''))}")
     lines.append("")
     
     # GEO/SRA Data
@@ -309,13 +311,13 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
         lines.append("")
     
     lines.append("### WhyRelevant")
-    lines.append(rec.get("WhyRelevant", ""))
+    lines.append(normalize_text(rec.get("WhyRelevant", "")))
     lines.append("")
     lines.append("### StudySummary")
-    lines.append(rec.get("StudySummary", ""))
+    lines.append(normalize_text(rec.get("StudySummary", "")))
     lines.append("")
     lines.append("### Methods")
-    methods = rec.get("Methods", "")
+    methods = normalize_text(rec.get("Methods", ""))
     if ";" in methods:
         for m in methods.split(";"):
             if m.strip():
@@ -324,7 +326,7 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
         lines.append(f"- {methods}")
     lines.append("")
     lines.append("### KeyFindings")
-    findings = rec.get("KeyFindings", "")
+    findings = normalize_text(rec.get("KeyFindings", ""))
     if ";" in findings:
         for f in findings.split(";"):
             if f.strip():

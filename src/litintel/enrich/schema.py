@@ -28,15 +28,28 @@ class BaseRecord(BaseModel):
     MeSH_Major: Optional[str] = ""      # Major topics only
 
 
+class AnalysisStep(BaseModel):
+    """Single step within an analysis block."""
+    step: str = ""
+    tool: str = ""
+    rationale: str = ""
+
+class AnalysisBlock(BaseModel):
+    """An analysis block with purpose and steps."""
+    analysis_name: str = ""
+    purpose: str = ""
+    steps: List[AnalysisStep] = []
+
 class CompMethods(BaseModel):
-    """Computational methods extracted from full-text papers."""
+    """Computational methods extracted from full-text papers.
+    
+    New structure uses 'analyses' blocks with purpose and rationale.
+    """
     summary_2to3_sentences: str = ""
+    analyses: List[AnalysisBlock] = []  # NEW: Replaces old workflow
+    stats_models: List[str] = []  # Max 5
     tags: List[str] = []  # From controlled vocab
     reuse_score_0to5: int = 0
-    assumptions_pitfalls: List[str] = []  # Max 5
-    tools_packages: List[str] = []  # Max 10
-    inputs_outputs: str = ""
-    stats_models: List[str] = []  # Max 5
 
 class Tier1Record(BaseRecord):
     """Schema for Prostate Cancer Triage (Gold Standard)"""
@@ -56,6 +69,10 @@ class Tier1Record(BaseRecord):
     SRA_Validated: str = ""
     # Computational Methods (full-text only)
     comp_methods: Optional[CompMethods] = None
+    # Escalation tracking (Shadow Judge)
+    EscalationTriggered: bool = False
+    EscalationReason: str = ""
+
 
 class Tier2Record(BaseRecord):
     """Schema for Methods Discovery"""

@@ -32,7 +32,7 @@ def _empty_cfg():
 def test_openai_escalates_on_ambiguous_score(monkeypatch):
     calls = []
 
-    def fake_openai(user_prompt, logger, model_name="gpt-5-nano"):
+    def fake_openai(user_prompt, logger, system_instruction, model_name="gpt-5-nano"):
         calls.append(model_name)
         if model_name == "gpt-5-nano":
             return (
@@ -45,7 +45,9 @@ def test_openai_escalates_on_ambiguous_score(monkeypatch):
                     "DataTypes": "",
                     "Group": "",
                 },
-                5,
+                5,  # output_tokens
+                100,  # input_tokens
+                50,  # cached_tokens
             )
         return (
             {
@@ -57,7 +59,7 @@ def test_openai_escalates_on_ambiguous_score(monkeypatch):
                 "DataTypes": "",
                 "Group": "",
             },
-            5,
+            5, 100, 50,
         )
 
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
@@ -78,7 +80,7 @@ def test_openai_escalates_on_ambiguous_score(monkeypatch):
 def test_openai_falls_back_when_primary_raises(monkeypatch):
     calls = []
 
-    def flaky_openai(user_prompt, logger, model_name="gpt-5-nano"):
+    def flaky_openai(user_prompt, logger, system_instruction, model_name="gpt-5-nano"):
         calls.append(model_name)
         if model_name == "gpt-5-nano":
             raise ValueError("simulated failure")
@@ -92,7 +94,7 @@ def test_openai_falls_back_when_primary_raises(monkeypatch):
                 "DataTypes": "Visium, scRNA-seq",
                 "Group": "Doe Lab",
             },
-            5,
+            5, 100, 50,
         )
 
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
@@ -115,7 +117,7 @@ def test_openai_falls_back_when_primary_raises(monkeypatch):
 def test_openai_escalates_on_none_score(monkeypatch):
     calls = []
 
-    def fake_openai(user_prompt, logger, model_name="gpt-5-nano"):
+    def fake_openai(user_prompt, logger, system_instruction, model_name="gpt-5-nano"):
         calls.append(model_name)
         if model_name == "gpt-5-nano":
             return (
@@ -128,7 +130,7 @@ def test_openai_escalates_on_none_score(monkeypatch):
                     "DataTypes": "",
                     "Group": "",
                 },
-                5,
+                5, 100, 50,
             )
         return (
             {
@@ -140,7 +142,7 @@ def test_openai_escalates_on_none_score(monkeypatch):
                 "DataTypes": "",
                 "Group": "",
             },
-            5,
+            5, 100, 50,
         )
 
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
