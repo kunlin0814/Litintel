@@ -32,8 +32,8 @@ discovery:
       NOT "Case Reports"[pt])
       AND english[la]
       NOT "Preprint"[Publication Type]
-  retmax: 20
-  reldays: 120
+  retmax: 25
+  reldays: 180
 
 ai:
   provider: openai  # or gemini

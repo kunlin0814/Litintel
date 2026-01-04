@@ -24,3 +24,6 @@ ore
 client_secret.json
 token.json
 secrets_key/
+
+# Generated Reports
+papers_tier1_validated.md
