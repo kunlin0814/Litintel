@@ -27,3 +27,8 @@ secrets_key/
 
 # Generated Reports
 papers_tier1_validated.md
+
+# Local Test Artifacts
+ai_input_*.txt
+gpt*.json
+scripts/debug_*.py
