@@ -42,9 +42,13 @@ ai:
   max_chars: 80000
   prompt_template: "tier1_pca"  # maps to internal template
   escalation_triggers:
-    score_range: [70, 84]       # Ambiguous relevance -> use mini
+    score_range: [70, 79]       # H2: Ambiguous relevance range
+    min_rationale_length: 50    # H1: Short rationale threshold
+    escalate_on_high_reuse: 4   # H4: High Reuse Score
+    h3_high_score_thresh: 80    # H3: High score threshold for mismatch check
+    h3_low_score_thresh: 70     # H3: Low score threshold for mismatch check
 
-    # Complexity Triggers (Machine Checkable)
+    # Upfront escalation (unchanged)
     min_chars: 35000            # >8-10k tokens (approx) -> Complex full text
     min_modalities: 3           # Requires >=3 keywords below to verify multi-omics
     modality_keywords:          
@@ -62,7 +66,6 @@ ai:
 
     # Behavior
     retry_on_error: true        # Malformed JSON -> retry with mini
-    escalate_on_high_reuse: 4   # If Nano predicts ReuseScore >= 4, re-run with Mini
 
 storage:
   notion:

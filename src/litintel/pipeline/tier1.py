@@ -129,11 +129,13 @@ def run_tier1_pipeline(config: AppConfig):
         
         # Extract sections and GEO/SRA from PMC
         for pmcid, xml in pmc_xml_map.items():
-            sections_text, geo_pmc, sra_pmc = extract_pmc_sections(xml)
+            sections_text, geo_pmc, sra_pmc, pmc_methods, pmc_results = extract_pmc_sections(xml)
             pmc_data[pmcid] = {
                 "full_text": sections_text,
                 "geo_pmc": geo_pmc,
-                "sra_pmc": sra_pmc
+                "sra_pmc": sra_pmc,
+                "methods": pmc_methods,
+                "results": pmc_results
             }
         
         logger.info(f"Extracted full-text from {len(pmc_data)} PMC articles")
@@ -145,6 +147,8 @@ def run_tier1_pipeline(config: AppConfig):
             rec["FullTextUsed"] = True
             rec["AI_EvidenceLevel"] = "FullText"
             rec["PMC_FullText"] = pmc_data[pmcid]["full_text"]
+            rec["PMC_Methods"] = pmc_data[pmcid]["methods"]
+            rec["PMC_Results"] = pmc_data[pmcid]["results"]
             
             # Merge PMC-found GEO/SRA with PubMed XML candidates
             if pmc_data[pmcid]["geo_pmc"]:
@@ -184,7 +188,10 @@ def run_tier1_pipeline(config: AppConfig):
             pydantic_model=Tier1Record,
             group_fallback=group_fallback,
             geo_candidates=rec.get("GEO_Candidates", ""),
-            sra_candidates=rec.get("SRA_Candidates", "")
+            sra_candidates=rec.get("SRA_Candidates", ""),
+            abstract=rec.get("Abstract", ""),
+            methods_text=rec.get("PMC_Methods", ""),
+            results_text=rec.get("PMC_Results", "")
         )
         full_rec = {**rec, **enrichment}
         enriched_records.append(full_rec)

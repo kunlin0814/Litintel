@@ -250,7 +250,7 @@ def extract_mesh_from_pubmed_xml(article_element: ET.Element) -> Tuple[str, str,
     return mesh_heading_list, mesh_terms, major_mesh
 
 
-def extract_pmc_sections(pmc_xml: str) -> Tuple[str, str, str]:
+def extract_pmc_sections(pmc_xml: str) -> Tuple[str, str, str, str, str]:
     """
     Extract relevant sections from PMC full-text XML plus GEO/SRA accessions.
     
@@ -262,16 +262,16 @@ def extract_pmc_sections(pmc_xml: str) -> Tuple[str, str, str]:
         pmc_xml: Raw PMC XML string from efetch
         
     Returns:
-        Tuple of (sections_text, geo_accessions, sra_accessions)
-        - sections_text: Concatenated text from extracted sections
-        - geo_accessions: Comma-separated GSE IDs
-        - sra_accessions: Comma-separated PRJNA/SRP/SRR IDs
+        Tuple of (sections_text, geo_accessions, sra_accessions, methods_text, results_text)
     """
     try:
         root = ET.fromstring(pmc_xml)
         
         sections = []
         all_text = []  # Collect all text for accession extraction
+        
+        pmc_methods = ""
+        pmc_results = ""
         
         # Abstract - usually in <abstract>
         abstract = root.find(".//abstract")
@@ -296,12 +296,14 @@ def extract_pmc_sections(pmc_xml: str) -> Tuple[str, str, str]:
                     methods_text = " ".join(sec.itertext()).strip()
                     sections.append(f"METHODS:\n{methods_text}")
                     all_text.append(methods_text)
+                    pmc_methods += methods_text + "\n"
                 
                 # Results section
                 elif any(keyword in title for keyword in ["result", "finding"]):
                     results_text = " ".join(sec.itertext()).strip()
                     sections.append(f"RESULTS:\n{results_text}")
                     all_text.append(results_text)
+                    pmc_results += results_text + "\n"
         
         # Data Availability - in <back> matter
         back = root.find(".//back")
@@ -335,9 +337,9 @@ def extract_pmc_sections(pmc_xml: str) -> Tuple[str, str, str]:
         geo_list = ", ".join(sorted(geo_accessions)) if geo_accessions else ""
         sra_list = ", ".join(sorted(sra_accessions)) if sra_accessions else ""
         
-        return sections_text, geo_list, sra_list
+        return sections_text, geo_list, sra_list, pmc_methods.strip(), pmc_results.strip()
         
     except Exception as e:
         logger.error(f"Error parsing PMC XML: {e}")
-        return "", "", ""
+        return "", "", "", "", ""
 

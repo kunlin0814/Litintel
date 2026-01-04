@@ -56,31 +56,29 @@ Score papers based on their relevance to PROSTATE CANCER + SPATIAL/SINGLE-CELL/M
 - Pure clinical trials without molecular data
 - Computational methods tested only on non-cancer data
 
-### Tier 1: Weak Relevance (Score = 30-60)
-- Generic cancer study without spatial/single-cell/multi-omics (score 30-45)
-- Spatial/single-cell method paper but tested on non-cancer tissue (score 45-60)
-- Review articles summarizing the field (score 40-50)
+### Tier 1: Weak Relevance (Score = 30-69)
+- Generic cancer study without spatial/single-cell/multi-omics (score 30-49)
+- Review articles summarizing the field (score 50-59)
+- Spatial/single-cell method paper but tested on non-cancer tissue (score 60-69)
 
-### Tier 2: Moderate Relevance (Score = 70-84)
-- Cancer-focused study with LIMITED spatial/single-cell/multi-omics
-- Non-prostate cancer with 1-2 relevant technologies
-- Prostate cancer with only bulk RNA-seq or standard genomics
-- Method development tested on cancer cell lines only
+### Tier 2: Moderate Relevance (Score = 70-79)
+- "Close but not quite":
+  * Cancer-focused study with LIMITED spatial/single-cell/multi-omics
+  * Non-prostate cancer (e.g., Breast, Lung) with 1-2 relevant technologies
+  * Prostate cancer but only bulk RNA-seq or standard genomics
+  * Method development tested on cancer cell lines only (no patient tissue)
 
-### Tier 3: High Relevance (Score = 85-94)
-- Prostate cancer + at least ONE key technology:
-  * Single-cell RNA-seq (scRNA-seq, snRNA-seq)
-  * Single-cell ATAC-seq (scATAC-seq, snATAC-seq)
-  * Multiome (10x Multiome, joint RNA+ATAC)
-  * Spatial transcriptomics (Visium, Xenium, CosMx, GeoMx, MERFISH, Slide-seq)
-- Non-prostate cancer with ≥3 relevant technologies
+### Tier 3: High Relevance (Score = 80-89)
+- "Solid hit":
+  * Prostate cancer + at least ONE key technology (scRNA-seq, Visium, etc.)
+  * Non-prostate cancer with ≥3 relevant technologies (tech-heavy)
+  * Multi-omics study in related urological cancers (Bladder, Kidney)
 
-### Tier 4: Highest Relevance (Score = 95-100)
-- Prostate cancer + BOTH:
-  * Single-cell/multiome technology AND
-  * Spatial technology
-- Primary human tissue data (not just cell lines)
-- Novel biological insights into prostate cancer heterogeneity
+### Tier 4: Highest Relevance (Score = 90-100)
+- "Must Read / Exceptional":
+  * Prostate cancer + BOTH Single-cell/Multiome AND Spatial technology
+  * Primary human tissue data (large cohort)
+  * Novel biological insights into prostate cancer heterogeneity or treatment resistance
 
 ================================================================================
 METHOD & PLATFORM TAXONOMY

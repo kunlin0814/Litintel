@@ -3,7 +3,7 @@ import time
 import json
 import re
 import logging
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 from pydantic import ValidationError
 
 import google.generativeai as genai
@@ -368,3 +368,352 @@ def _coerce_relevance_score(score_value: Any) -> Tuple[int, bool]:
         return coerced, False
     except (TypeError, ValueError):
         return 0, True
+
+SHADOW_JUDGE_PROMPT = """PMID: {pmid}
+
+=== RAW PAPER DATA ===
+ABSTRACT:
+{abstract}
+
+METHODS:
+{methods}
+
+RESULTS:
+{results}
+
+=== NANO'S ASSESSMENT (model-generated) ===
+RelevanceScore: {nano_score}
+WhyRelevant: {nano_why}
+StudySummary: {nano_summary}
+ReuseScore: {nano_reuse}
+
+=== YOUR TASK ===
+You are auditing Nano's assessment. You have STRICT rules:
+
+OVERTURN ONLY IF Nano made a MATERIAL FACTUAL ERROR:
+- Claims an effect not supported by Results
+- Universalizes a conditional finding
+- Misstates direction or significance
+- Contradicts Methods or controls
+- Assigns high relevance without evidence
+- Contradicts itself (e.g., WhyRelevant uses strong positive language like "highly relevant" but RelevanceScore < 70, OR uses dismissive language but RelevanceScore > 85)
+
+DO NOT OVERTURN FOR:
+- Missing details (Nano's job is to be concise)
+- Conservative scoring (acceptable)
+- Vague language (acceptable)
+- "I would score differently" (not a valid reason)
+
+If you cannot cite specific evidence (quote from paper OR Nano's self-contradiction), you MUST output PASS.
+
+Answer with JSON:
+{{
+  "decision": "PASS" | "DISAGREE" | "OVERTURN",
+  "error_type": "paper_contradiction" | "internal_inconsistency" | null,
+  "quoted_evidence": "exact quote from paper OR Nano's contradictory statements",
+  "contradiction": "explanation of factual error"
+}}
+"""
+
+# Module-level tracking for rate guardrail
+SHADOW_JUDGE_STATS = {"total": 0, "overturn": 0, "disagree": 0, "pass": 0}
+
+def check_overturn_rate() -> Tuple[bool, float]:
+    """Returns (is_too_high, rate). Threshold > 25%."""
+    if SHADOW_JUDGE_STATS["total"] < 10:
+        return False, 0.0
+    rate = SHADOW_JUDGE_STATS["overturn"] / SHADOW_JUDGE_STATS["total"]
+    return rate > 0.25, rate
+
+def _shadow_judge(
+    client: OpenAI,
+    nano_output: Dict[str, Any],
+    abstract: str,
+    methods: str,
+    results: str,
+    pmid: str,
+    model: str = "gpt-5-mini"
+) -> Tuple[bool, str, Dict[str, Any]]:
+    """
+    Shadow Judge: validates Nano using raw paper sections.
+    Returns (should_escalate, decision, details_dict).
+    """
+    nano_score = nano_output.get('RelevanceScore')
+    nano_why = nano_output.get('WhyRelevant', '')[:400]
+    nano_summary = nano_output.get('StudySummary', '')[:400]
+    nano_reuse = "N/A"
+    comp = nano_output.get('comp_methods')
+    if isinstance(comp, dict):
+        nano_reuse = comp.get('reuse_score_0to5', 'N/A')
+        
+    prompt = SHADOW_JUDGE_PROMPT.format(
+        pmid=pmid,
+        abstract=abstract[:20000],
+        methods=methods[:20000],
+        results=results[:20000],
+        nano_score=nano_score,
+        nano_why=nano_why,
+        nano_summary=nano_summary,
+        nano_reuse=nano_reuse
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0  # Deterministic
+        )
+        result = json.loads(response.choices[0].message.content)
+        
+        decision = result.get("decision", "PASS").upper()
+        
+        # Update stats
+        SHADOW_JUDGE_STATS["total"] += 1
+        if decision == "OVERTURN":
+            SHADOW_JUDGE_STATS["overturn"] += 1
+        elif decision == "DISAGREE":
+            SHADOW_JUDGE_STATS["disagree"] += 1
+        else:
+            SHADOW_JUDGE_STATS["pass"] += 1
+            
+        # Check guardrail
+        too_high, rate = check_overturn_rate()
+        if too_high:
+            # EMERGENCY DUMP
+            try:
+                logs_dir = pathlib.Path("logs")
+                logs_dir.mkdir(exist_ok=True)
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                log_file = logs_dir / f"escalation_counterfactuals_{timestamp}_CRASHed.jsonl"
+                with open(log_file, "w") as f:
+                    for entry in ESCALATION_COUNTERFACTUALS:
+                        f.write(json.dumps(entry) + "\n")
+                logger.error(f"EMERGENCY DUMP: Saved logs to {log_file}")
+            except Exception as dump_err:
+                logger.error(f"Failed emergency dump: {dump_err}")
+                
+            logger.critical(f"Shadow Judge overturn rate {rate:.1%} exceeds 25% limit. Stopping.")
+            raise RuntimeError(f"Shadow Judge overturn rate {rate:.1%} > 25%. Stopping for human review.")
+
+        # Escalation criteria: OVERTURN + evidence
+        has_evidence = bool(result.get("quoted_evidence"))
+        should_escalate = (decision == "OVERTURN" and has_evidence)
+        
+        return should_escalate, decision, result
+        
+    except RuntimeError:
+        raise  # Propagate the guardrail stop
+    except Exception as e:
+        logger.warning(f"Shadow Judge failed for {pmid}: {e}")
+        return False, "ERROR", {"error": str(e)}
+
+# Counterfactual logging
+ESCALATION_COUNTERFACTUALS = []
+
+def _log_counterfactual(pmid: str, nano_output: dict, signals: list, decision: str, judge_details: dict):
+    """Log cases where heuristics flagged but Judge declined."""
+    ESCALATION_COUNTERFACTUALS.append({
+        "pmid": pmid,
+        "nano_score": nano_output.get("RelevanceScore"),
+        "heuristic_signals": signals,
+        "shadow_judge_decision": decision,
+        "shadow_judge_details": judge_details,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+def get_escalation_counterfactuals() -> List[Dict[str, Any]]:
+    """Return the list of counterfactual logs."""
+    return ESCALATION_COUNTERFACTUALS
+
+# DISAGREE cases - separate log for tuning rubric
+ESCALATION_DISAGREE_LOG = []
+
+def _log_disagree(pmid: str, nano_output: dict, signals: list, judge_details: dict):
+    """Log cases where Shadow Judge disagreed but couldn't prove overturn."""
+    ESCALATION_DISAGREE_LOG.append({
+        "pmid": pmid,
+        "nano_score": nano_output.get("RelevanceScore"),
+        "heuristic_signals": signals,
+        "shadow_judge_details": judge_details,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+def get_disagree_log() -> List[Dict[str, Any]]:
+    """Return the list of DISAGREE cases."""
+    return ESCALATION_DISAGREE_LOG
+
+
+def enrich_record(
+    text: str,
+    authors: str,
+    pmid: str,
+    config: AIConfig,
+    system_prompt: str,
+    json_schema: Dict[str, Any],
+    pydantic_model: Any, 
+    group_fallback: str = "",
+    geo_candidates: str = "",
+    sra_candidates: str = "",
+    abstract: str = "",     # NEW
+    methods_text: str = "", # NEW
+    results_text: str = ""  # NEW
+) -> Dict[str, Any]:
+    
+    # Inject fallback into prompt (using replace to avoid conflicts with JSON braces)
+    final_system_prompt = system_prompt.replace("{group_fallback}", group_fallback)
+    
+    # Build user prompt with optional candidate validation
+    user_prompt = f"""PMID: {pmid}
+Authors: {authors}
+GroupFallbackCandidate: {group_fallback}
+"""
+    
+    # Add GEO/SRA candidates if present (for AI validation)
+    if geo_candidates or sra_candidates:
+        user_prompt += "\n--- ACCESSION VALIDATION ---\n"
+        if geo_candidates:
+            user_prompt += f"GEO_Candidates (found via regex): {geo_candidates}\n"
+        if sra_candidates:
+            user_prompt += f"SRA_Candidates (found via regex): {sra_candidates}\n"
+        user_prompt += "Validate which are THIS study's data (see schema instructions).\n"
+    
+    user_prompt += f"""
+TEXT_START
+{text}
+TEXT_END
+"""
+    
+    provider = config.provider
+    result_json = {}
+    
+    try:
+        if provider == AIProvider.OPENAI:
+            client = _get_openai_client()
+            already_escalated = False
+            usage = {}
+            
+            # Determine Initial Model Strategies
+            model_to_use = config.model_default
+            if _should_escalate_upfront(text, config, pmid):
+                model_to_use = config.model_escalate
+                already_escalated = True
+            
+            # Try Selected Model
+            try:
+                result_json, usage = _call_openai(client, model_to_use, final_system_prompt, user_prompt, json_schema)
+            except Exception as e:
+                # If we haven't escalated yet, try escalating on error if configured
+                should_retry = config.escalation_triggers and config.escalation_triggers.get("retry_on_error", False)
+                if not already_escalated and should_retry:
+                    logger.warning(f"PMID {pmid}: Failed with {model_to_use} ({e}). Escalating to {config.model_escalate}...")
+                    result_json, usage = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                    already_escalated = True
+                    model_to_use = config.model_escalate
+                else:
+                    raise e # Re-raise if already escalated or retry disabled
+            
+            # Log Token Usage with Caching
+            cached_pct = 0.0
+            if usage.get("input", 0) > 0:
+                cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
+                
+            logger.info(f"PMID {pmid} AI Usage ({model_to_use}): In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
+            
+            # Post-run Escalation Checks (Heuristics + Shadow Judge)
+            if not already_escalated and config.escalation_triggers:
+                from litintel.enrich.escalation_heuristics import should_escalate
+                
+                # normalize score first for heuristics
+                score, score_invalid = _coerce_relevance_score(result_json.get("RelevanceScore"))
+                result_json["RelevanceScore"] = score # ensure int
+                
+                heuristic_escalate, signals = should_escalate(result_json, config.escalation_triggers)
+                
+                if heuristic_escalate:
+                    # Skip Shadow Judge if abstract-only (no Methods/Results to validate against)
+                    has_pmc_content = bool(methods_text.strip() or results_text.strip())
+                    
+                    if not has_pmc_content:
+                        logger.info(f"PMID {pmid}: Heuristics flagged ({signals}) but abstract-only. Skipping Shadow Judge.")
+                        result_json["EscalationTriggered"] = False
+                        result_json["EscalationReason"] = "HEURISTIC_FLAGGED_ABSTRACT_ONLY"
+                    else:
+                        # Shadow Judge
+                        override, decision, details = _shadow_judge(
+                            client, 
+                            result_json, 
+                            abstract=abstract,
+                            methods=methods_text,
+                            results=results_text,
+                            pmid=pmid,
+                            model=config.model_escalate
+                        )
+                        
+                        if override:
+                            logger.info(f"PMID {pmid}: Shadow Judge OVERRIDE ({signals}): {details.get('contradiction')}. Re-running...")
+                            result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                            model_to_use = config.model_escalate
+                            result_json["EscalationTriggered"] = True
+                            result_json["EscalationReason"] = f"SHADOW_JUDGE_OVERTURN: {details.get('contradiction', '')[:100]}"
+                        else:
+                            logger.info(f"PMID {pmid}: Heuristics flagged ({signals}) but Shadow Judge said {decision}. Keeping Nano.")
+                            _log_counterfactual(pmid, result_json, signals, decision, details)
+                            result_json["EscalationTriggered"] = False
+                            result_json["EscalationReason"] = f"SHADOW_JUDGE_{decision}"
+                            
+                            # Log DISAGREE cases separately for tuning
+                            if decision == "DISAGREE":
+                                _log_disagree(pmid, result_json, signals, details)
+                else:
+                    result_json["EscalationTriggered"] = False
+                    result_json["EscalationReason"] = ""
+
+        elif provider == AIProvider.GEMINI:
+             # Gemini impl (simplified)
+             model = _get_gemini_model(final_system_prompt, json_schema)
+             resp = model.generate_content(user_prompt)
+             result_json = json.loads(resp.text)
+             
+        # Normalize keys: OpenAI sometimes returns RELEVANCESCORE instead of RelevanceScore
+        logger.debug(f"PMID {pmid}: Raw AI keys before normalization: {list(result_json.keys())}")
+        result_json = _normalize_keys(result_json)
+        logger.debug(f"PMID {pmid}: Keys after normalization: {list(result_json.keys())}")
+        
+        # Normalize the RelevanceScore so downstream never sees None/invalid values
+        rel_score, rel_invalid = _coerce_relevance_score(result_json.get("RelevanceScore"))
+        result_json["RelevanceScore"] = rel_score
+        if rel_invalid or rel_score == 0:
+            logger.warning(f"PMID {pmid}: RelevanceScore is {rel_score}. Check AI response.")
+        else:
+            logger.info(f"PMID {pmid}: RelevanceScore = {rel_score}")
+        
+        # Ensure AI-specific fields have defaults (don't validate full schema yet - that needs PubMed fields)
+        ai_field_defaults = {
+            "RelevanceScore": 0,
+            "WhyRelevant": "",
+            "WhyYouMightCare": "",
+            "StudySummary": "",
+            "PaperRole": "",
+            "Theme": "",
+            "Methods": "",
+            "KeyFindings": "",
+            "DataTypes": "",
+            "Group": "",
+            "CellIdentitySignatures": "",
+            "PerturbationsUsed": "",
+            "GEO_Validated": "",
+            "SRA_Validated": "",
+            "PipelineConfidence": "Low"
+        }
+        
+        # Add missing fields with defaults
+        for field, default in ai_field_defaults.items():
+            if field not in result_json:
+                result_json[field] = default
+        
+        return result_json
+
+    except Exception as e:
+        logger.error(f"Enrichment failed for {pmid}: {e}")
+        return {"RelevanceScore": -1, "WhyRelevant": f"Error: {str(e)}", "PipelineConfidence": "Error"}
