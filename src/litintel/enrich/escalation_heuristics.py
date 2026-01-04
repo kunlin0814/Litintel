@@ -1,8 +1,8 @@
 """
 Escalation heuristics - deterministic gate for Shadow Judge.
-Version: 1.0.0
+Version: 1.0.1
 """
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Union
 
 # Keywords that suggest high relevance (positive signals)
 HIGH_RELEVANCE_KEYWORDS = [
@@ -18,13 +18,25 @@ LOW_RELEVANCE_KEYWORDS = [
     "unrelated", "out of scope"
 ]
 
+
+def _get_config_value(config, key: str, default: Any) -> Any:
+    """Get config value from either dict or Pydantic model."""
+    if hasattr(config, key):
+        return getattr(config, key, default)
+    elif isinstance(config, dict):
+        return config.get(key, default)
+    return default
+
+
 def should_escalate(
     nano_output: Dict[str, Any], 
-    config: Dict[str, Any]
+    config: Any  # Can be Dict or EscalationTriggersConfig
 ) -> Tuple[bool, List[str]]:
     """
     Returns (should_escalate, triggered_rules) based on deterministic heuristics.
     Does NOT trust Nano's value judgments—only structural signals.
+    
+    Supports both dict config and typed EscalationTriggersConfig.
     """
     signals = []
     if not config:
@@ -32,13 +44,13 @@ def should_escalate(
     
     # H1: Short rationale (Nano uncertain but didn't say so)
     why_relevant = nano_output.get("WhyRelevant", "")
-    min_rationale_len = config.get("min_rationale_length", 50)
+    min_rationale_len = _get_config_value(config, "min_rationale_length", 50)
     if len(why_relevant) < min_rationale_len:
         signals.append("H1_SHORT_RATIONALE")
     
     # H2: Score near threshold boundary
     score = nano_output.get("RelevanceScore", 0)
-    score_range = config.get("score_range", [70, 79])
+    score_range = _get_config_value(config, "score_range", [70, 79])
     if len(score_range) == 2:
         start, end = score_range
         if start <= score <= end:
@@ -59,8 +71,8 @@ def should_escalate(
     
     # Thresholds for "High" and "Low" score mismatch
     # Can be overridden via config for tuning
-    high_score_thresh = config.get("h3_high_score_thresh", 80)
-    low_score_thresh = config.get("h3_low_score_thresh", 70)
+    high_score_thresh = _get_config_value(config, "h3_high_score_thresh", 80)
+    low_score_thresh = _get_config_value(config, "h3_low_score_thresh", 70)
     
     if has_high_kw and score < low_score_thresh:
         signals.append("H3_HIGH_TEXT_LOW_SCORE")
@@ -78,7 +90,7 @@ def should_escalate(
         except (ValueError, TypeError):
             reuse = 0
             
-        escalate_on_high_reuse = config.get("escalate_on_high_reuse", 4)
+        escalate_on_high_reuse = _get_config_value(config, "escalate_on_high_reuse", 4)
         
         # If highly relevant but reuse is very low (and not just missing)
         # Note: This heuristic assumes high relevance papers SHOULD have reuse potential 
