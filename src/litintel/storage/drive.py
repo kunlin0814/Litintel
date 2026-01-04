@@ -368,59 +368,59 @@ def format_comp_methods_block(rec: Dict[str, Any]) -> str:
         lines.append(f"**Technologies:** {methods_str}")
     lines.append("")
     
-    # Computational method highlight
-    lines.append("### Computational method highlight")
+    # Summary
     summary = comp.get("summary_2to3_sentences", "")
     if summary:
-        # Split summary into bullet points if it's multi-sentence
-        for sent in summary.split(". "):
-            if sent.strip():
-                lines.append(f"- {sent.strip().rstrip('.')}")
-    lines.append("")
+        lines.append("### Summary")
+        lines.append(summary)
+        lines.append("")
     
-    # Inputs → Outputs
-    lines.append("### Inputs → Outputs")
-    io = comp.get("inputs_outputs", "")
-    if io:
-        lines.append(io)
-    lines.append("")
+    # Analysis Blocks (new structure)
+    analyses = comp.get("analyses", [])
+    if analyses:
+        for i, analysis in enumerate(analyses, 1):
+            analysis_name = analysis.get("analysis_name", f"Analysis {i}")
+            purpose = analysis.get("purpose", "")
+            steps = analysis.get("steps", [])
+            
+            lines.append(f"### {analysis_name}")
+            if purpose:
+                lines.append(f"**Purpose:** {purpose}")
+            lines.append("")
+            
+            if steps:
+                lines.append("| Step | Tool | Rationale |")
+                lines.append("|------|------|-----------|")
+                for s in steps[:6]:  # Max 6 steps per block
+                    step_name = s.get("step", "")
+                    tool = s.get("tool", "")
+                    rationale = s.get("rationale", "")
+                    lines.append(f"| {step_name} | {tool} | {rationale} |")
+                lines.append("")
     
-    # Key computational steps
-    lines.append("### Key computational steps")
-    tools = comp.get("tools_packages", [])
-    existing = rec.get("Methods", "")
-    # Extract steps from methods if semicolon-separated
-    if ";" in existing:
-        for i, step in enumerate(existing.split(";"), 1):
-            if step.strip():
-                lines.append(f"{i}. {step.strip()}")
-    elif tools:
-        for i, t in enumerate(tools[:8], 1):  # Max 8 steps
-            lines.append(f"{i}. {t}")
-    lines.append("")
+    # Fallback: Legacy workflow format (backward compatibility)
+    elif comp.get("workflow"):
+        lines.append("### Computational Workflow")
+        for step in comp.get("workflow", [])[:10]:
+            step_name = step.get("step", "")
+            tool = step.get("tool", "")
+            purpose = step.get("purpose", step.get("rationale", ""))
+            lines.append(f"- **{step_name}** ({tool}): {purpose}")
+        lines.append("")
     
-    # Tools / packages
-    lines.append("### Tools / packages")
-    if tools:
-        for t in tools[:10]:
-            lines.append(f"- {t}")
-    lines.append("")
-    
-    # Models / statistics
-    lines.append("### Models / statistics")
+    # Stats/Models (kept)
     stats = comp.get("stats_models", [])
     if stats:
+        lines.append("### Statistical Models")
         for s in stats[:5]:
             lines.append(f"- {s}")
-    lines.append("")
+        lines.append("")
     
-    # Assumptions / pitfalls
-    lines.append("### Assumptions / pitfalls")
-    pitfalls = comp.get("assumptions_pitfalls", [])
-    if pitfalls:
-        for p in pitfalls[:5]:
-            lines.append(f"- {p}")
-    lines.append("")
+    # Tags
+    tags = comp.get("tags", [])
+    if tags:
+        lines.append(f"**Tags:** {', '.join(tags)}")
+        lines.append("")
     
     # Delimiter
     lines.append("---")

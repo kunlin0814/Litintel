@@ -201,6 +201,19 @@ def run_tier1_pipeline(config: AppConfig):
     
     if config.storage.csv and config.storage.csv.enabled:
         save_csv(valid_records, config.storage.csv.filename)
+        
+        # Save human-readable Markdown ONLY for papers validated by Shadow Judge
+        # (Heuristics triggered AND Shadow Judge said PASS or DISAGREE)
+        validated_records = [
+            r for r in valid_records 
+            if r.get("EscalationReason", "").startswith("SHADOW_JUDGE_PASS") or
+               r.get("EscalationReason", "").startswith("SHADOW_JUDGE_DISAGREE")
+        ]
+        
+        if validated_records:
+            from litintel.pipeline.shared import save_markdown
+            md_filename = config.storage.csv.filename.replace('.csv', '_validated.md')
+            save_markdown(validated_records, md_filename)
 
     if config.storage.notion and config.storage.notion.enabled:
         db_id = config.storage.notion.database_id_env

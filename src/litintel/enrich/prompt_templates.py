@@ -70,15 +70,15 @@ Score papers based on their relevance to PROSTATE CANCER + SPATIAL/SINGLE-CELL/M
 
 ### Tier 3: High Relevance (Score = 80-89)
 - "Solid hit":
-  * Prostate cancer + at least ONE key technology (scRNA-seq, Visium, etc.)
-  * Non-prostate cancer with ≥3 relevant technologies (tech-heavy)
+  * Prostate cancer + at least ONE key technology (scRNA-seq, snRNA-seq, scATAC-seq, Visium, etc.)
   * Multi-omics study in related urological cancers (Bladder, Kidney)
 
 ### Tier 4: Highest Relevance (Score = 90-100)
 - "Must Read / Exceptional":
-  * Prostate cancer + BOTH Single-cell/Multiome AND Spatial technology
-  * Primary human tissue data (large cohort)
-  * Novel biological insights into prostate cancer heterogeneity or treatment resistance
+  * Non-prostate cancer with ≥3 relevant technologies (tech-heavy) → Score 90-94
+  * Prostate cancer + Multiome (scRNA + scATAC) + Bulk Sequencing → Score 90-94
+  * Prostate cancer + Multiome (scRNA + scATAC) + Spatial technology → Score 95-100
+  * Primary human tissue data (large cohort ≥100 samples) with novel biological insights
 
 ================================================================================
 METHOD & PLATFORM TAXONOMY
@@ -212,35 +212,38 @@ Ignore Abstract, Results, and Discussion for comp_methods extraction.
     "summary_2to3_sentences": "Brief methods-only summary. MUST NOT mention: cell types, genes, pathways, phenotypes, disease mechanisms, or biological conclusions.",
     "tags": ["deconvolution", "trajectory_inference"],
     "reuse_score_0to5": 3,
-    "workflow": [
+    "analyses": [
       {
-        "step": "Normalization and Variance Stabilization",
-        "tool": "Seurat (SCTransform)",
-        "purpose": "To remove technical artifacts and preserve biological variance"
+        "analysis_name": "Single-cell preprocessing and integration",
+        "purpose": "To normalize data, remove batch effects, and prepare for downstream clustering",
+        "steps": [
+          {"step": "SCTransform normalization", "tool": "Seurat v5", "rationale": "Variance stabilization for UMI counts"},
+          {"step": "Batch correction", "tool": "Harmony", "rationale": "Align samples from different patients"},
+          {"step": "Dimensionality reduction", "tool": "PCA + UMAP", "rationale": "Reduce complexity for visualization"}
+        ]
       },
       {
-        "step": "Dimensionality Reduction",
-        "tool": "RunPCA",
-        "purpose": "To reduce data complexity for clustering"
-      },
-      {
-        "step": "Integration/Batch Correction",
-        "tool": "Harmony",
-        "purpose": "To align datasets from different patients and remove batch effects"
+        "analysis_name": "CNV inference and validation",
+        "purpose": "To integrate epiAneufinder results with WGS CNV profiles",
+        "steps": [
+          {"step": "CNV calling from scATAC", "tool": "epiAneufinder", "rationale": "Infer copy number from chromatin accessibility"},
+          {"step": "Validation against WGS", "tool": "Custom R script", "rationale": "Confirm CNV calls with orthogonal data"}
+        ]
       }
     ],
-    "assumptions_pitfalls": ["Assumes UMI counts", "Sensitive to batch effects"],
     "stats_models": ["Negative binomial", "Harmony batch correction"]
   }
 }
 
-### Workflow Extraction Guidelines:
-- **step**: Be specific! "SCTransform" is better than just "Normalization". "Louvain clustering at res 0.5" is better than "Clustering".
-- **tool**: The specific function or package used (e.g., "Seurat::FindMarkers", "CellChat v2").
-- **purpose**: The GOAL of this step. Why did they do it? (e.g., "to regress out cell cycle effects", "to infer cell-cell communication strength").
-- **Logical Ordering**: Workflow steps must follow logical order: preprocessing → integration → modeling → inference → downstream.
-- **Pruning Rule**: Exclude steps whose primary purpose is descriptive or illustrative (e.g., generic plotting, figure generation, heatmaps) unless they introduce a non-standard analytical transformation.
-- **Implicit Defaults**: Do not include steps that are implied defaults unless explicitly stated (e.g., standard PCA/UMAP without custom parameters).
+### Analysis Block Extraction Guidelines:
+- **analysis_name**: Name the major analytical goal (e.g., "Preprocessing", "Integration", "Trajectory inference", "CNV validation").
+- **purpose**: WHY this analysis was performed. What question does it answer? (e.g., "to integrate scATAC and scRNA for multiome analysis", "to infer tumor clonal evolution").
+- **steps**: List each computational step within this analysis block.
+  - **step**: Be specific! "SCTransform" is better than "Normalization".
+  - **tool**: The specific package/function used (e.g., "Seurat::FindMarkers", "CellChat v2", "epiAneufinder").
+  - **rationale**: Why this specific step? (e.g., "to regress out cell cycle effects", "to validate CNV calls").
+- **Logical Ordering**: Group related steps into analysis blocks. Order blocks logically: preprocessing → integration → annotation → downstream.
+- **Pruning Rule**: Exclude generic plotting/visualization steps unless they involve novel transformations.
 
 ### Controlled Tags (MUST pick from this list):
 - integration / batch_correction / cnv_inference / spatial_mapping
@@ -259,9 +262,8 @@ Ignore Abstract, Results, and Discussion for comp_methods extraction.
 - 5: Benchmark-quality, reproducible, with published tool/code
 
 ### Constraints:
-- Extract ONLY from "METHODS:" section — ignore Abstract/Results/Discussion
+- Extract ONLY from "METHODS/RESULTS:" section — ignore Abstract/Discussion
 - Methods focus ONLY — no biology narrative in summary
-- Max 5 pitfalls, 10 workflow steps, 5 stats models
 - Tags MUST come from controlled list above
 
 ================================================================================

@@ -250,6 +250,35 @@ def extract_mesh_from_pubmed_xml(article_element: ET.Element) -> Tuple[str, str,
     return mesh_heading_list, mesh_terms, major_mesh
 
 
+def _strip_latex(text: str) -> str:
+    """
+    Remove LaTeX artifacts from PMC full-text.
+    PMC XML often contains LaTeX source for equations embedded in tex-math elements.
+    """
+    if not text:
+        return text
+    
+    # Remove \documentclass[...]{minimal} blocks and everything until closing brace patterns
+    # Pattern matches: \documentclass[...]{...} followed by \usepackage lines
+    text = re.sub(
+        r'\\documentclass\[.*?\]\{minimal\}.*?(?=\s*[A-Z]|\s*$)',
+        '',
+        text,
+        flags=re.DOTALL
+    )
+    
+    # Remove common LaTeX package declarations
+    text = re.sub(r'\\usepackage\{[^}]+\}\s*', '', text)
+    
+    # Remove standalone LaTeX commands that might remain
+    text = re.sub(r'\\[a-zA-Z]+\{[^}]*\}', '', text)
+    
+    # Clean up excessive whitespace introduced by removals
+    text = re.sub(r'\s{3,}', '  ', text)
+    
+    return text.strip()
+
+
 def extract_pmc_sections(pmc_xml: str) -> Tuple[str, str, str, str, str]:
     """
     Extract relevant sections from PMC full-text XML plus GEO/SRA accessions.
@@ -337,7 +366,12 @@ def extract_pmc_sections(pmc_xml: str) -> Tuple[str, str, str, str, str]:
         geo_list = ", ".join(sorted(geo_accessions)) if geo_accessions else ""
         sra_list = ", ".join(sorted(sra_accessions)) if sra_accessions else ""
         
-        return sections_text, geo_list, sra_list, pmc_methods.strip(), pmc_results.strip()
+        # Strip LaTeX artifacts from PMC full-text (common in equations)
+        sections_text = _strip_latex(sections_text)
+        pmc_methods = _strip_latex(pmc_methods.strip())
+        pmc_results = _strip_latex(pmc_results.strip())
+        
+        return sections_text, geo_list, sra_list, pmc_methods, pmc_results
         
     except Exception as e:
         logger.error(f"Error parsing PMC XML: {e}")

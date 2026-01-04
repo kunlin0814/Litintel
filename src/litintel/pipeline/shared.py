@@ -57,5 +57,65 @@ def save_csv(records: List[Dict[str, Any]], filename: str):
     if not records:
         return
     df = pd.DataFrame(records)
-    df.to_csv(filename, index=False)
+    df.to_csv(filename, index=False, encoding='utf-8-sig')  # BOM for Excel
+    logger.info(f"Saved {len(records)} records to {filename}")
+
+
+def save_markdown(records: List[Dict[str, Any]], filename: str):
+    """Save records to Markdown format for human review."""
+    if not records:
+        return
+    
+    # Normalize Unicode characters for readability
+    def normalize_text(text):
+        if not isinstance(text, str):
+            return str(text) if text else ""
+        # Replace curly quotes and fancy chars with ASCII
+        replacements = {
+            ''': "'", ''': "'", '"': '"', '"': '"',
+            '–': '-', '—': '-', '…': '...',
+            '\u2009': ' ', '\u00a0': ' ',  # thin/non-breaking spaces
+            '≤': '<=', '≥': '>=', '±': '+/-',
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        return text
+    
+    lines = []
+    lines.append(f"# Pipeline Output: {len(records)} Papers\n")
+    lines.append(f"_Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}_\n")
+    lines.append("---\n")
+    
+    for i, rec in enumerate(records, 1):
+        pmid = rec.get('PMID', 'N/A')
+        title = normalize_text(rec.get('Title', 'No Title'))
+        authors = normalize_text(rec.get('Authors', ''))
+        score = rec.get('RelevanceScore', 0)
+        why = normalize_text(rec.get('WhyRelevant', ''))
+        summary = normalize_text(rec.get('StudySummary', ''))
+        findings = normalize_text(rec.get('KeyFindings', ''))
+        methods = normalize_text(rec.get('Methods', ''))
+        escalation = rec.get('EscalationTriggered', False)
+        esc_reason = normalize_text(rec.get('EscalationReason', ''))
+        
+        lines.append(f"## {i}. [{title}](https://pubmed.ncbi.nlm.nih.gov/{pmid}/)\n")
+        lines.append(f"**PMID**: {pmid} | **Score**: {score}")
+        if escalation:
+            lines.append(f" | ⚠️ **Escalated**: {esc_reason[:50]}")
+        lines.append("\n\n")
+        
+        lines.append(f"**Authors**: {authors[:100]}{'...' if len(authors) > 100 else ''}\n\n")
+        lines.append(f"**Why Relevant**: {why}\n\n")
+        lines.append(f"**Summary**: {summary}\n\n")
+        
+        if findings:
+            lines.append(f"**Key Findings**: {findings}\n\n")
+        if methods:
+            lines.append(f"**Methods**: {methods}\n\n")
+        
+        lines.append("---\n")
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+    
     logger.info(f"Saved {len(records)} records to {filename}")
