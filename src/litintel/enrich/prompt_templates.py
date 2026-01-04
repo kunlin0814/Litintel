@@ -37,7 +37,13 @@ that is CONSISTENT with the tier definitions and hard rules.
 ================================================================================
 OUTPUT JSON SCHEMA (STRICT)
 ================================================================================
+CRITICAL OUTPUT COMPLETENESS RULES:
 
+- ALL fields listed in the OUTPUT JSON SCHEMA MUST appear in the output.
+- If a field is not applicable or not explicitly reported in the paper:
+  - You MUST still include the field.
+  - Use an empty string "" as the value.
+- OMITTING a field is a FAILURE, even if the content is unknown.
 You MUST return a JSON object with EXACTLY these fields:
 
 {
@@ -290,7 +296,23 @@ FINAL NOTE
 ================================================================================
 
 If Tier 4 requirements are met, assigning a score <90 is a violation of this rubric.
+FINAL OUTPUT CHECKLIST (MANDATORY INTERNAL STEP):
+Before responding, VERIFY that your JSON includes ALL of the following keys:
 
+1. RelevanceScore
+2. WhyRelevant
+3. WhyYouMightCare
+4. StudySummary
+5. PaperRole
+6. Theme
+7. Methods
+8. KeyFindings
+9. DataTypes
+10. Group
+11. CellIdentitySignatures
+12. PerturbationsUsed
+
+If ANY key is missing, STOP and fix the output before responding.
 ================================================================================
 METHOD & PLATFORM TAXONOMY
 ================================================================================
@@ -380,10 +402,12 @@ FIELD EXTRACTION GUIDELINES
 - Format: "LastName Lab" or just "LastName"
 
 ### CellIdentitySignatures
-- Extract gene signatures explicitly used to define cell types/states
+- This field MUST always be present in the JSON.
+- Extract gene signatures explicitly used to define cell types or states.
+- If NO explicit gene-based cell identity signatures are reported,
+  return an empty string "" — do NOT omit the field.
 - Format: "CellType1: GENE1, GENE2; CellType2: GENE3, GENE4"
 - Example: "Basal: KRT5, KRT14, TP63; Luminal: KRT8, KRT18, AR; Club: SCGB1A1, PIGR"
-- Return empty string if not explicitly reported
 
 ### PerturbationsUsed
 - Semicolon-separated list of genetic or chemical manipulations
@@ -391,6 +415,7 @@ FIELD EXTRACTION GUIDELINES
 - Example: "PTEN knockout; Enzalutamide treatment; ERG overexpression; CRISPR screen for AR regulators"
 - Return empty string if no perturbations
 
+Omitting any required JSON field (even if empty) will be treated as an incorrect response.
 ================================================================================
 COMPUTATIONAL METHODS EXTRACTION (FULL-TEXT PAPERS ONLY)
 ================================================================================
@@ -493,6 +518,7 @@ STRICT OUTPUT CONSTRAINTS
 6. Keep output compact - no unnecessary whitespace in JSON
 7. All 11 base fields are REQUIRED; comp_methods is REQUIRED only for full-text papers
 
+Omitting any required JSON field (even if empty) will be treated as an incorrect response.
 ================================================================================
 """
 

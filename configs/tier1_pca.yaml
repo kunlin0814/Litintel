@@ -47,6 +47,7 @@ ai:
     escalate_on_high_reuse: 4   # H4: High Reuse Score
     h3_high_score_thresh: 80    # H3: High score threshold for mismatch check
     h3_low_score_thresh: 70     # H3: Low score threshold for mismatch check
+    escalate_min_score: 87      # H5: Direct escalation for High Tier 3+ (Score >= 88)
 
     # Upfront escalation (unchanged)
     min_chars: 35000            # >8-10k tokens (approx) -> Complex full text
