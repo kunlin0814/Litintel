@@ -119,8 +119,40 @@ graph TD
 
 ### Provider Abstraction
 
--   **OpenAI**: Uses `response_format: {"type": "json_object"}`. Model selection is automatic: `gpt-5-nano` by default, escalates to `gpt-5-mini` for ambiguous relevance (70-84).
+-   **OpenAI**: Uses `response_format: {"type": "json_object"}`. Model selection is automatic: `gpt-5-nano` by default.
 -   **Gemini**: Uses `response_mime_type: "application/json"` with a full Pydantic-derived schema.
+
+### Shadow Judge Escalation
+
+Papers with **ambiguous scores (70-79)** or structural issues are validated by `gpt-5-mini`:
+
+1. **Deterministic Heuristics** (`escalation_heuristics.py`):
+   - H1: Short rationale (< 50 chars)
+   - H2: Score in ambiguous range [70-79]
+   - H3: Text/score mismatch
+   - H4: High relevance but low reuse
+2. **Shadow Judge**: Mini reviews raw text and may overturn Nano (with quoted evidence)
+3. **Guardrail**: Pipeline halts if overturn rate > 25%
+
+### Computational Methods (`comp_methods`)
+
+Full-text papers get structured methods extraction:
+
+```json
+{
+  "analyses": [
+    {
+      "analysis_name": "Single-cell preprocessing",
+      "purpose": "To normalize and integrate samples",
+      "steps": [
+        {"step": "SCTransform", "tool": "Seurat v5", "rationale": "Variance stabilization"}
+      ]
+    }
+  ],
+  "stats_models": ["Negative binomial"],
+  "tags": ["integration", "batch_correction"]
+}
+```
 
 ### Prompt Templates (`prompt_templates.py`)
 
@@ -144,10 +176,11 @@ graph TD
 ### Google Drive (`drive.py`)
 
 -   **JSONL**: `papers.jsonl` in root folder (machine-readable log).
--   **Markdown Buckets**:
+-   **Markdown Buckets** (in `NotebookLM_Corpus/`):
     -   `Literature_{Year}_Q{Q}.md`: All papers, sorted by score.
     -   `HighConfidence_Analysis.md`: Papers with `RelevanceScore >= 90`.
--   Synced to a `NotebookLM_Corpus/` subfolder for AI ingestion.
+    -   `CompMethods_{Year}_Q{Q}.md`: Computational methods from full-text papers.
+-   **Local Markdown**: `papers_tier1_validated.md` - Only Shadow Judge validated papers (human QA).
 
 ---
 

@@ -95,7 +95,7 @@ All AI-extracted fields are strictly typed:
 
 | Field | Description |
 |-------|-------------|
-| `RelevanceScore` | 0-100. Higher = more relevant to your research focus. |
+| `RelevanceScore` | 0-100. Tier 3 (80-89) = Solid, Tier 4 (90+) = Must Read. |
 | `WhyRelevant` | 1-sentence justification. |
 | `WhyYouMightCare` | Reusable insight (e.g., "Novel spatial CNV method"). |
 | `StudySummary` | 2-3 sentences: aim, cohort, result. |
@@ -104,6 +104,36 @@ All AI-extracted fields are strictly typed:
 | `DataTypes` | Controlled vocab (scRNA-seq, Visium, etc.). |
 | `AI_EvidenceLevel` | "FullText" or "Abstract". |
 | `PipelineConfidence` | Low / Medium / High / Error. |
+| `EscalationTriggered` | Boolean: Was Shadow Judge invoked? |
+| `EscalationReason` | Why escalation occurred (heuristic or Shadow Judge result). |
+
+---
+
+## Escalation Logic (Shadow Judge)
+
+Papers with **ambiguous scores (70-79)** or structural issues are validated by a second AI model:
+
+1. **Deterministic Heuristics** (H1-H4) flag papers for review
+2. **Shadow Judge** (`gpt-5-mini`) audits flagged papers with full-text evidence
+3. **Evidence Requirement**: Mini must quote text to overturn Nano
+4. **25% Guardrail**: Pipeline halts if overturn rate exceeds threshold
+
+**Output:**
+- `papers_tier1_validated.md`: Only Shadow Judge validated papers (human QA)
+- `ESCALATION_COUNTERFACTUALS`: Logged overturns for rubric tuning
+
+---
+
+## Scoring Rubric
+
+| Score | Tier | Criteria |
+|-------|------|----------|
+| 0 | 0 | Not relevant |
+| 30-69 | 1 | Weak relevance |
+| 70-79 | 2 | Moderate / Ambiguous (Escalation Target) |
+| 80-89 | 3 | High / Solid (PCa + 1 key tech) |
+| 90-94 | 4 | Highest (Non-PCa + ≥3 techs, PCa + Multiome + Bulk) |
+| 95-100 | 4 | Must Read (PCa + Multiome + Spatial, ≥100 samples) |
 
 ---
 

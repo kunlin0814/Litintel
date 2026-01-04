@@ -34,6 +34,7 @@ You MUST return a JSON object with EXACTLY these fields:
 {
   "RelevanceScore": 85,
   "WhyRelevant": "One sentence justification",
+  "WhyYouMightCare": "One sentence: why a researcher should read this (e.g., novel method, reusable dataset, unique cohort)",
   "StudySummary": "2-3 sentences describing aim, cohort, and result",
   "PaperRole": "One sentence about paper's contribution",
   "Theme": "Tag1; Tag2; Tag3",
@@ -70,14 +71,14 @@ Score papers based on their relevance to PROSTATE CANCER + SPATIAL/SINGLE-CELL/M
 
 ### Tier 3: High Relevance (Score = 80-89)
 - "Solid hit":
-  * Prostate cancer + at least ONE key technology (scRNA-seq, snRNA-seq, scATAC-seq, Visium, etc.)
+  * Prostate cancer + 1-2 key technologies (scRNA-seq, snRNA-seq, scATAC-seq, Visium, Xenium, Bulk RNA-seq, Bulk ATAC-seq, etc.)
   * Multi-omics study in related urological cancers (Bladder, Kidney)
 
 ### Tier 4: Highest Relevance (Score = 90-100)
 - "Must Read / Exceptional":
-  * Non-prostate cancer with ≥3 relevant technologies (tech-heavy) → Score 90-94
-  * Prostate cancer + Multiome (scRNA + scATAC) + Bulk Sequencing → Score 90-94
-  * Prostate cancer + Multiome (scRNA + scATAC) + Spatial technology → Score 95-100
+  * Non-prostate cancer with Multiome (scRNA + scATAC) + Spatial technology (e.g., Visium, Xenium) (tech-heavy) → Score 90-94
+  * Prostate cancer + ≥3 technologies (e.g., Multiome (scRNA + scATAC) + Bulk RNA-seq or Bulk ATAC-seq) → Score 90-94
+  * Prostate cancer + Multiome (scRNA + scATAC) + Spatial technology (e.g., Visium, Xenium) → Score 95-100
   * Primary human tissue data (large cohort ≥100 samples) with novel biological insights
 
 ================================================================================
