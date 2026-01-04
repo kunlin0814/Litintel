@@ -601,6 +601,11 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
     
     for rec in sorted_records:
         score = rec.get("RelevanceScore", 0)
+        
+        # Skip low-relevance papers (only write score >= 80 to Drive)
+        if score < 80:
+            continue
+            
         md_text = format_markdown_entry(rec)
         
         quarterly_buffer.append(md_text)
@@ -626,8 +631,11 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
         except Exception as e:
             logger.error(f"Failed to append to {high_conf_filename}: {e}")
     
-    # 3. Computational Methods (full-text papers only → quarterly append file)
-    fulltext_records = [r for r in records if r.get("FullTextUsed") and r.get("comp_methods")]
+    # 3. Computational Methods (full-text papers with score >= 80 only → quarterly append file)
+    fulltext_records = [
+        r for r in records 
+        if r.get("FullTextUsed") and r.get("comp_methods") and r.get("RelevanceScore", 0) >= 80
+    ]
     if fulltext_records:
         try:
             # Ensure Computational_Methods folder exists

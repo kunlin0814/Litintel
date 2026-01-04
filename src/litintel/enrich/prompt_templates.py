@@ -227,6 +227,7 @@ Ignore Abstract, Results, and Discussion for comp_methods extraction.
         "analysis_name": "CNV inference and validation",
         "purpose": "To integrate epiAneufinder results with WGS CNV profiles",
         "steps": [
+          {"step": "WGS CNV calling", "tool": "BIC-seq2", "rationale": "Generate ground truth CNV profiles from WGS data"},
           {"step": "CNV calling from scATAC", "tool": "epiAneufinder", "rationale": "Infer copy number from chromatin accessibility"},
           {"step": "Validation against WGS", "tool": "Custom R script", "rationale": "Confirm CNV calls with orthogonal data"}
         ]
@@ -243,6 +244,9 @@ Ignore Abstract, Results, and Discussion for comp_methods extraction.
   - **step**: Be specific! "SCTransform" is better than "Normalization".
   - **tool**: The specific package/function used (e.g., "Seurat::FindMarkers", "CellChat v2", "epiAneufinder").
   - **rationale**: Why this specific step? (e.g., "to regress out cell cycle effects", "to validate CNV calls").
+- **WGS CNV Calling**: Explicitly check for WGS CNV calling methods.
+  - If a specific tool/pipeline is used (e.g., GATK, CNVkit), list it.
+  - If data is from a public database (cBioPortal, TCGA) or not mentioned, create a step with tool "None/External" and rationale "Public data/Not mentioned".
 - **Logical Ordering**: Group related steps into analysis blocks. Order blocks logically: preprocessing → integration → annotation → downstream.
 - **Pruning Rule**: Exclude generic plotting/visualization steps unless they involve novel transformations.
 
