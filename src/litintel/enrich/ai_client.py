@@ -307,12 +307,16 @@ def _shadow_judge(
     )
     
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0  # Deterministic
-        )
+        # Build params - gpt-5 models don't support custom temperature
+        params = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"},
+        }
+        if not model.startswith("gpt-5"):
+            params["temperature"] = 0  # Deterministic for non-gpt-5 models
+            
+        response = client.chat.completions.create(**params)
         result = json.loads(response.choices[0].message.content)
         
         decision = result.get("decision", "PASS").upper()
