@@ -149,14 +149,15 @@ def _should_escalate_upfront(text: str, config: AIConfig, pmid: str) -> bool:
         
     t = config.escalation_triggers
     
-    # 1. Length Check
-    if len(text) > t.get("min_chars", 100000):
-        logger.info(f"PMID {pmid}: Escalating - Text length {len(text)} > {t.get('min_chars')}")
+    # 1. Length Check - use getattr for Pydantic model
+    min_chars = getattr(t, 'min_chars', None) or 100000
+    if len(text) > min_chars:
+        logger.info(f"PMID {pmid}: Escalating - Text length {len(text)} > {min_chars}")
         return True
         
     # 2. Modality Count
-    min_mod = t.get("min_modalities", 99)
-    mod_kw = t.get("modality_keywords", [])
+    min_mod = getattr(t, 'min_modalities', None) or 99
+    mod_kw = getattr(t, 'modality_keywords', []) or []
     if mod_kw:
         # Simple string check (case-insensitive)
         text_lower = text.lower()
@@ -165,8 +166,8 @@ def _should_escalate_upfront(text: str, config: AIConfig, pmid: str) -> bool:
             logger.info(f"PMID {pmid}: Escalating - Found {found_count} modalities (threshold {min_mod})")
             return True
             
-    # 3. Complexity Keywords
-    comp_kw = t.get("complexity_keywords", [])
+    # 3. Complexity Keywords (not in typed config, but support for backwards compat)
+    comp_kw = getattr(t, 'complexity_keywords', []) or []
     if comp_kw:
         text_lower = text.lower()
         for kw in comp_kw:
