@@ -99,4 +99,10 @@ def should_escalate(
         if score >= 85 and reuse <= 1:
             signals.append("H4_HIGH_RELEVANCE_LOW_REUSE")
             
+    # H5: Direct High Score Escalation
+    # Example: If Nano gives >= 88, verify with Mini
+    escalate_min_score = _get_config_value(config, "escalate_min_score", 101) # Default 101 (disabled)
+    if score >= escalate_min_score:
+        signals.append(f"H5_HIGH_SCORE_TRIGGER_{score}")
+            
     return len(signals) > 0, signals
