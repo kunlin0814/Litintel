@@ -161,11 +161,25 @@ def run_tier1_pipeline(config: AppConfig):
                 existing.update(pmc_data[pmcid]["sra_pmc"].split(", "))
                 rec["SRA_Candidates"] = ", ".join(sorted(existing - {""}))
     
-    # 4. Enrichment
+    # 4. Enrichment - OPTIMIZED FOR PROMPT CACHING
+    # Sort papers by model type to maximize cache efficiency:
+    # - Abstract-only papers use Nano (process first)
+    # - Full-text papers use Mini (process second)
+    # This avoids cache thrashing from model switching.
+    
     system_prompt = get_system_prompt(config.ai.prompt_template)
     
+    # Partition records
+    abstract_only = [r for r in clean_records if not r.get("FullTextUsed")]
+    full_text = [r for r in clean_records if r.get("FullTextUsed")]
+    
+    logger.info(f"Cache Optimization: Processing {len(abstract_only)} Abstract-only (Nano) first, then {len(full_text)} Full-text (Mini)")
+    
+    # Process in optimized order: Nano batch -> Mini batch
+    ordered_records = abstract_only + full_text
+    
     enriched_records = []
-    for rec in clean_records:
+    for rec in ordered_records:
         authors_str = rec.get("Authors", "")
         group_fallback = ""
         if authors_str:

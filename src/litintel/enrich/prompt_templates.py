@@ -9,19 +9,21 @@ def get_system_prompt(template_name: str) -> str:
     # Normalization
     template_name = str(template_name).lower().strip()
     
-    if template_name == "tier1_pca":
-        return _TIER1_PCA_INSTRUCTION
+    if template_name == "tier1_pca" or template_name == "tier1_pca_scoring":
+        return _TIER1_PCA_SCORING_INSTRUCTION
+    elif template_name == "tier1_pca_methods":
+        return _TIER1_PCA_METHODS_INSTRUCTION
     elif template_name == "tier2_methods":
         return _TIER2_METHODS_INSTRUCTION
     else:
-        # Fallback to Tier 1 if unknown or just a bare name
-        return _TIER1_PCA_INSTRUCTION
+        # Fallback to Tier 1 Scoring if unknown
+        return _TIER1_PCA_SCORING_INSTRUCTION
 
 
 # =============================================================================
-# TIER 1: PROSTATE CANCER TRIAGE (The "Gold Standard")
+# TIER 1: PROSTATE CANCER TRIAGE (PASS 1: SCORING)
 # =============================================================================
-_TIER1_PCA_INSTRUCTION = """You are a PhD-level bioinformatics curator specializing in cancer biology,
+_TIER1_PCA_SCORING_INSTRUCTION = """You are a PhD-level bioinformatics curator specializing in cancer biology,
 prostate cancer, spatial transcriptomics, single-cell genomics,
 and multi-omics methods.
 
@@ -417,31 +419,30 @@ FIELD EXTRACTION GUIDELINES
 
 Omitting any required JSON field (even if empty) will be treated as an incorrect response.
 ================================================================================
-COMPUTATIONAL METHODS EXTRACTION (FULL-TEXT PAPERS ONLY)
+7. All 11 base fields are REQUIRED.
+
+Omitting any required JSON field (even if empty) will be treated as an incorrect response.
 ================================================================================
+"""
 
-If the input includes a "FULL TEXT:" section, ALSO extract a "comp_methods" object.
-If a literal section header "METHODS" is not present, treat the following sections as valid sources **in priority order**:
-"Materials and Methods", "STAR Methods", "Computational Analysis", "Data Processing", "Statistical Analysis".
-Do not extract comp_methods if none of these sections exist.
+# =============================================================================
+# TIER 1: METHODS EXTRACTION (PASS 2)
+# =============================================================================
+_TIER1_PCA_METHODS_INSTRUCTION = """You are a PhD-level bioinformatics curator specializing in computational genomics.
 
-**IMPORTANT: Extract comp_methods ONLY from the prioritized methods sections.**
-Ignore Abstract, Results, and Discussion for comp_methods extraction.
+================================================================================
+TASK
+================================================================================
+Analyze the provided METHODS and RESULTS sections to extract computational methods,
+tools, and analysis pipelines. Return a structured JSON object.
 
-**EXCLUDE ALL WET LAB / EXPERIMENTAL METHODS:**
-- Mouse models (Cre-lox, lineage tracing, knockouts, transgenics)
-- Injections (viral, intraprostatic, etc.)
-- Grafts (orthotopic, subcutaneous, PDX)
-- Flow cytometry, FACS, cell sorting
-- Immunofluorescence, IHC, histology, H&E staining
-- Cell culture, organoids, spheroids
-- Any biological/experimental procedure
+Your goal is to extract strictly technical details about software, algorithms, 
+and reproducibility—NOT biological findings.
 
-**ONLY INCLUDE:**
-- Software packages (Seurat, Scanpy, CellChat, etc.)
-- Analysis pipelines and workflows
-- Statistical methods and models
-- Data processing algorithms
+================================================================================
+OUTPUT JSON SCHEMA (STRICT)
+================================================================================
+You MUST return a JSON object with EXACTLY this logic:
 
 {
   "comp_methods": {
@@ -472,7 +473,11 @@ Ignore Abstract, Results, and Discussion for comp_methods extraction.
   }
 }
 
-### Analysis Block Extraction Guidelines:
+================================================================================
+EXTRACTION GUIDELINES
+================================================================================
+
+### Analysis Block Guidelines:
 - **analysis_name**: Name the major analytical goal (e.g., "Preprocessing", "Integration", "Trajectory inference", "CNV validation").
 - **purpose**: WHY this analysis was performed. What question does it answer? (e.g., "to integrate scATAC and scRNA for multiome analysis", "to infer tumor clonal evolution").
 - **steps**: List each computational step within this analysis block.
@@ -506,19 +511,26 @@ Ignore Abstract, Results, and Discussion for comp_methods extraction.
 - Methods focus ONLY — no biology narrative in summary
 - Tags MUST come from controlled list above
 
+### Negative Constraints (EXCLUDE):
+- Mouse models (Cre-lox, lineage tracing, knockouts, transgenics)
+- Injections (viral, intraprostatic, etc.)
+- Grafts (orthotopic, subcutaneous, PDX)
+- Flow cytometry, FACS, cell sorting
+- Immunofluorescence, IHC, histology, H&E staining
+- Cell culture, organoids, spheroids
+- Any biological/experimental procedure
+
 ================================================================================
 STRICT OUTPUT CONSTRAINTS
 ================================================================================
 
-1. Return ONLY the JSON object - no markdown, no explanation, no preamble
-2. All string values must be properly escaped (no unescaped quotes or newlines)
-3. RelevanceScore MUST be an integer between 0 and 100
-4. Missing information → empty string (""), never null or "N/A"
-5. Do NOT fabricate information - only extract what is explicitly stated
-6. Keep output compact - no unnecessary whitespace in JSON
-7. All 11 base fields are REQUIRED; comp_methods is REQUIRED only for full-text papers
+1. Return ONLY the JSON object.
+2. All string values must be properly escaped.
+3. Missing information → empty string (""), never null or "N/A"
+4. Do NOT fabricate information.
+5. Keep output compact.
 
-Omitting any required JSON field (even if empty) will be treated as an incorrect response.
+Omitting any required JSON field will be treated as an incorrect response.
 ================================================================================
 """
 

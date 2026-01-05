@@ -36,11 +36,15 @@ discovery:
   reldays: 180
 
 ai:
-  provider: openai  # or gemini
-  model_default: "gpt-5-nano"
-  model_escalate: "gpt-5-mini"
+  provider: openai
+  # Two-Pass Architecture Config
+  pass1_model_fulltext: "gpt-5-mini"  # Pass 1 (Scoring) if Full Text
+  pass1_model_abstract: "gpt-5-nano"  # Pass 1 (Scoring) if Abstract Only
+  pass2_model: "gpt-5-mini"           # Pass 2 (Methods extraction)
+  pass2_min_score: 88                 # Trigger threshold for Pass 2 (score >= 88)
+
   max_chars: 80000
-  prompt_template: "tier1_pca"  # maps to internal template
+  prompt_template: "tier1_pca"
   escalation_triggers:
     score_range: [70, 79]       # H2: Ambiguous relevance range
     min_rationale_length: 50    # H1: Short rationale threshold
@@ -49,21 +53,10 @@ ai:
     h3_low_score_thresh: 70     # H3: Low score threshold for mismatch check
     escalate_min_score: 87      # H5: Direct escalation for High Tier 3+ (Score >= 88)
 
-    # Upfront escalation (unchanged)
-    min_chars: 35000            # >8-10k tokens (approx) -> Complex full text
-    min_modalities: 3           # Requires >=3 keywords below to verify multi-omics
-    modality_keywords:          
-      - "scRNA"
-      - "snRNA"
-      - "scATAC"
-      - "snATAC"
-      - "spatial"
-      - "Visium"
-      - "Xenium"
-      - "CosMx"
-      - "Multiome"
-      - "Multi-omic"
-      - "sc multi-omic"
+
+    # Upfront escalation (Handled by Two-Pass Logic now)
+    # min_chars: removed - implies Pass 1 Full Text mode
+    # min_modalities: removed - implies Pass 1 Full Text mode
 
     # Behavior
     retry_on_error: true        # Malformed JSON -> retry with mini

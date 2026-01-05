@@ -43,8 +43,16 @@ class EscalationTriggersConfig(BaseModel):
 
 class AIConfig(BaseModel):
     provider: AIProvider
-    model_default: str
-    model_escalate: str
+    # Legacy / Default Single-Pass Fields (Optional now)
+    model_default: Optional[str] = "gpt-5-nano"
+    model_escalate: Optional[str] = "gpt-5-mini"
+    
+    # Two-Pass Architecture Fields
+    pass1_model_fulltext: Optional[str] = None
+    pass1_model_abstract: Optional[str] = None
+    pass2_model: Optional[str] = None
+    pass2_min_score: int = 88
+    
     max_chars: int = 80000
     prompt_template: str
     escalation_triggers: Optional[EscalationTriggersConfig] = None

@@ -335,6 +335,7 @@ def _shadow_judge(
         if too_high:
             # EMERGENCY DUMP
             try:
+                import pathlib
                 logs_dir = pathlib.Path("logs")
                 logs_dir.mkdir(exist_ok=True)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -413,135 +414,164 @@ def enrich_record(
     results_text: str = ""  # NEW
 ) -> Dict[str, Any]:
     
-    # Inject fallback into prompt (using replace to avoid conflicts with JSON braces)
+    # -------------------------------------------------------------------------
+    # DECISION: SINGLE-PASS vs TWO-PASS
+    # -------------------------------------------------------------------------
+    use_two_pass = (
+        getattr(config, 'pass1_model_fulltext', None) is not None 
+        and getattr(config, 'pass1_model_abstract', None) is not None
+    )
+    
+    has_full_text = bool(methods_text.strip() or results_text.strip())
+    
+    # -------------------------------------------------------------------------
+    # PASS 1: SCORING & METADATA
+    # -------------------------------------------------------------------------
+    
+    # Select Model for Pass 1
+    model_to_use = config.model_default # Fallback
+    
+    if use_two_pass:
+        if has_full_text:
+            model_to_use = config.pass1_model_fulltext
+        else:
+            model_to_use = config.pass1_model_abstract
+    else:
+        # Legacy Logic (Single Pass escalation)
+        if _should_escalate_upfront(text, config, pmid):
+            model_to_use = config.model_escalate
+            
+    # Prepare Prompt for Pass 1
+    # Note: system_prompt passed in is now _TIER1_PCA_SCORING_INSTRUCTION (if updated in main)
+    # Inject fallback into prompt
     final_system_prompt = system_prompt.replace("{group_fallback}", group_fallback)
     
-    # Build user prompt with optional candidate validation
-    user_prompt = f"""PMID: {pmid}
-Authors: {authors}
-GroupFallbackCandidate: {group_fallback}
-"""
-    
-    # Add GEO/SRA candidates if present (for AI validation)
+    user_prompt = f"PMID: {pmid}\nAuthors: {authors}\nGroupFallbackCandidate: {group_fallback}\n"
     if geo_candidates or sra_candidates:
         user_prompt += "\n--- ACCESSION VALIDATION ---\n"
-        if geo_candidates:
-            user_prompt += f"GEO_Candidates (found via regex): {geo_candidates}\n"
-        if sra_candidates:
-            user_prompt += f"SRA_Candidates (found via regex): {sra_candidates}\n"
-        user_prompt += "Validate which are THIS study's data (see schema instructions).\n"
-    
-    user_prompt += f"""
-TEXT_START
-{text}
-TEXT_END
-"""
-    
+        if geo_candidates: user_prompt += f"GEO_Candidates (found via regex): {geo_candidates}\n"
+        if sra_candidates: user_prompt += f"SRA_Candidates (found via regex): {sra_candidates}\n"
+        user_prompt += "Validate what matches.\n"
+        
+    user_prompt += f"\nTEXT_START\n{text}\nTEXT_END\n"
+
+    # Execution Pass 1
     provider = config.provider
     result_json = {}
     
+    # --- CALL API (Pass 1) ---
     try:
         if provider == AIProvider.OPENAI:
             client = _get_openai_client()
-            already_escalated = False
-            usage = {}
+            logger.info(f"PMID {pmid} [Pass 1] Scoring with {model_to_use} (FullText={has_full_text})...")
             
-            # Determine Initial Model Strategies
-            model_to_use = config.model_default
-            if _should_escalate_upfront(text, config, pmid):
-                model_to_use = config.model_escalate
-                already_escalated = True
-            
-            # Try Selected Model
             try:
                 result_json, usage = _call_openai(client, model_to_use, final_system_prompt, user_prompt, json_schema)
+                
+                # Log usage
+                cached_pct = 0.0
+                if usage.get("input", 0) > 0:
+                    cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
+                logger.info(f"PMID {pmid} [Pass 1] Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
+                
             except Exception as e:
-                # If we haven't escalated yet, try escalating on error if configured
-                should_retry = config.escalation_triggers and config.escalation_triggers.retry_on_error
-                if not already_escalated and should_retry:
-                    logger.warning(f"PMID {pmid}: Failed with {model_to_use} ({e}). Escalating to {config.model_escalate}...")
-                    result_json, usage = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
-                    already_escalated = True
-                    model_to_use = config.model_escalate
+                # Simple retry with escalation model if in legacy single-pass mode
+                logger.error(f"PMID {pmid} [Pass 1] Failed: {e}")
+                if not use_two_pass and config.escalation_triggers and config.escalation_triggers.retry_on_error:
+                    logger.warning(f"Retrying with {config.model_escalate}...")
+                    result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
                 else:
-                    raise e # Re-raise if already escalated or retry disabled
-            
-            # Log Token Usage with Caching
-            cached_pct = 0.0
-            if usage.get("input", 0) > 0:
-                cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
-                
-            logger.info(f"PMID {pmid} AI Usage ({model_to_use}): In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
-            
-            # Post-run Escalation Checks (Heuristics + Shadow Judge)
-            if not already_escalated and config.escalation_triggers:
-                from litintel.enrich.escalation_heuristics import should_escalate
-                
-                # normalize score first for heuristics
-                score, score_invalid = _coerce_relevance_score(result_json.get("RelevanceScore"))
-                result_json["RelevanceScore"] = score # ensure int
-                
-                heuristic_escalate, signals = should_escalate(result_json, config.escalation_triggers)
-                
-                if heuristic_escalate:
-                    # Skip Shadow Judge if abstract-only (no Methods/Results to validate against)
-                    has_pmc_content = bool(methods_text.strip() or results_text.strip())
-                    
-                    if not has_pmc_content:
-                        logger.info(f"PMID {pmid}: Heuristics flagged ({signals}) but abstract-only. Skipping Shadow Judge.")
-                        result_json["EscalationTriggered"] = False
-                        result_json["EscalationReason"] = "HEURISTIC_FLAGGED_ABSTRACT_ONLY"
-                    else:
-                        # Shadow Judge
-                        override, decision, details = _shadow_judge(
-                            client, 
-                            result_json, 
-                            abstract=abstract,
-                            methods=methods_text,
-                            results=results_text,
-                            pmid=pmid,
-                            model=config.model_escalate
-                        )
-                        
-                        if override:
-                            logger.info(f"PMID {pmid}: Shadow Judge OVERRIDE ({signals}): {details.get('contradiction')}. Re-running...")
-                            result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
-                            model_to_use = config.model_escalate
-                            result_json["EscalationTriggered"] = True
-                            result_json["EscalationReason"] = f"SHADOW_JUDGE_OVERTURN: {details.get('contradiction', '')[:100]}"
-                        else:
-                            logger.info(f"PMID {pmid}: Heuristics flagged ({signals}) but Shadow Judge said {decision}. Keeping Nano.")
-                            _log_counterfactual(pmid, result_json, signals, decision, details)
-                            result_json["EscalationTriggered"] = False
-                            result_json["EscalationReason"] = f"SHADOW_JUDGE_{decision}"
-                            
-                            # Log DISAGREE cases separately for tuning
-                            if decision == "DISAGREE":
-                                _log_disagree(pmid, result_json, signals, details)
-                else:
-                    result_json["EscalationTriggered"] = False
-                    result_json["EscalationReason"] = ""
-
-        elif provider == AIProvider.GEMINI:
-             # Gemini impl (simplified)
-             model = _get_gemini_model(final_system_prompt, json_schema)
-             resp = model.generate_content(user_prompt)
-             result_json = json.loads(resp.text)
-             
-        # Normalize keys: OpenAI sometimes returns RELEVANCESCORE instead of RelevanceScore
-        logger.debug(f"PMID {pmid}: Raw AI keys before normalization: {list(result_json.keys())}")
-        result_json = _normalize_keys(result_json)
-        logger.debug(f"PMID {pmid}: Keys after normalization: {list(result_json.keys())}")
-        
-        # Normalize the RelevanceScore so downstream never sees None/invalid values
-        rel_score, rel_invalid = _coerce_relevance_score(result_json.get("RelevanceScore"))
-        result_json["RelevanceScore"] = rel_score
-        if rel_invalid or rel_score == 0:
-            logger.warning(f"PMID {pmid}: RelevanceScore is {rel_score}. Check AI response.")
+                    raise e
         else:
-            logger.info(f"PMID {pmid}: RelevanceScore = {rel_score}")
+            # Gemini logic (placeholder)
+            raise NotImplementedError("Two-pass refactor currently validates OpenAI only.")
+
+        # Normalize Keys & Coerce Score (Crucial for Pass 2 decision)
+        result_json = _normalize_keys(result_json)
+        score, _ = _coerce_relevance_score(result_json.get("RelevanceScore"))
+        result_json["RelevanceScore"] = score
         
-        # Ensure AI-specific fields have defaults (don't validate full schema yet - that needs PubMed fields)
+        # -------------------------------------------------------------------------
+        # PASS 2: METHODS EXTRACTION (Conditional)
+        # -------------------------------------------------------------------------
+        if use_two_pass and has_full_text:
+            threshold = getattr(config, 'pass2_min_score', 88)
+            
+            if score >= threshold:
+                logger.info(f"PMID {pmid}: Score {score} >= {threshold}. Triggering Pass 2 (Methods)...")
+                
+                # Load Methods Prompt
+                # Import inside function to avoid circular imports if any, but checking litintel structure
+                from litintel.enrich.prompt_templates import _TIER1_PCA_METHODS_INSTRUCTION
+                methods_system_prompt = _TIER1_PCA_METHODS_INSTRUCTION
+                methods_model = getattr(config, 'pass2_model', config.model_escalate)
+                
+                # Construct Methods-Specific User Prompt
+                methods_user_prompt = f"PMID: {pmid}\nAnalyze these sections for computational methods:\n\n"
+                methods_user_prompt += f"=== METHODS ===\n{methods_text}\n\n"
+                # Sometimes results contain implementation details
+                methods_user_prompt += f"=== RESULTS ===\n{results_text}\n"
+                
+                # Call API (Pass 2)
+                try:
+                    # Pass empty schema dict or minimal stub since prompt defines schema
+                    methods_json, m_usage = _call_openai(client, methods_model, methods_system_prompt, methods_user_prompt, {})
+                    
+                    logger.info(f"PMID {pmid} [Pass 2] Usage: In={m_usage.get('input')}, Out={m_usage.get('output')}")
+                    
+                    # Merge 'comp_methods' into main result
+                    if "comp_methods" in methods_json:
+                        result_json["comp_methods"] = methods_json["comp_methods"]
+                    else:
+                        logger.warning(f"PMID {pmid} [Pass 2] returned no 'comp_methods' key.")
+                        
+                except Exception as e:
+                    logger.error(f"PMID {pmid} [Pass 2] Failed: {e}. Continuing with partial result.")
+                    result_json["comp_methods_error"] = str(e)
+            else:
+                logger.info(f"PMID {pmid}: Score {score} < {threshold}. Skipping Pass 2.")
+
+        # -------------------------------------------------------------------------
+        # LEGACY / SHADOW JUDGE (Heuristics)
+        # -------------------------------------------------------------------------
+        # Retain heuristic checks for scoring integrity
+        
+        if config.escalation_triggers:
+            from litintel.enrich.escalation_heuristics import should_escalate
+            heuristic_escalate, signals = should_escalate(result_json, config.escalation_triggers)
+            
+            if heuristic_escalate:
+                # Skip Shadow Judge if abstract-only (no Methods/Results to validate against)
+                # Note: 'has_full_text' check handles this
+                if not has_full_text:
+                    result_json["EscalationTriggered"] = False
+                    result_json["EscalationReason"] = "HEURISTIC_FLAGGED_ABSTRACT_ONLY"
+                else:
+                    # Shadow Judge
+                    override, decision, details = _shadow_judge(
+                        client, 
+                        result_json, 
+                        abstract=abstract,
+                        methods=methods_text,
+                        results=results_text,
+                        pmid=pmid,
+                        model=config.model_escalate 
+                    )
+                    
+                    result_json["EscalationTriggered"] = True
+                    result_json["EscalationReason"] = f"Heuristics: {signals}"
+                    result_json["ShadowJudgeDecision"] = decision
+                    result_json["ShadowJudgeDetails"] = details
+                    
+                    if override:
+                        result_json = override
+                        # If override happened, relevance might have changed. 
+                        # We do NOT re-trigger Pass 2 here (too complex), but we log it.
+                        logger.warning(f"PMID {pmid}: Shadow Judge OVERTURNED result.")
+            else:
+                 result_json["EscalationTriggered"] = False
+
+        # Ensure AI-specific fields have defaults
         ai_field_defaults = {
             "RelevanceScore": 0,
             "WhyRelevant": "",
@@ -560,11 +590,10 @@ TEXT_END
             "PipelineConfidence": "Low"
         }
         
-        # Add missing fields with defaults
         for field, default in ai_field_defaults.items():
             if field not in result_json:
                 result_json[field] = default
-        
+
         return result_json
 
     except Exception as e:
