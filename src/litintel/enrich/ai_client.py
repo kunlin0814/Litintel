@@ -545,6 +545,32 @@ def enrich_record(
             else:
                  result_json["EscalationTriggered"] = False
 
+        # Calculate PipelineConfidence based on evidence and processing
+        # High: Full-text + high score + no heuristic escalation triggered
+        # Medium: Full-text OR (Abstract + high score)
+        # Medium-Ambiguous: Abstract + escalation triggered (heuristic flagged)
+        # Low: Abstract-only + low score
+        score = result_json.get("RelevanceScore", 0)
+        escalation_triggered = result_json.get("EscalationTriggered", False)
+        
+        if has_full_text:
+            if score >= 80 and not escalation_triggered:
+                calculated_confidence = "High"
+            elif score >= 70:
+                calculated_confidence = "Medium"
+            else:
+                calculated_confidence = "Low"
+        else:
+            # Abstract-only
+            if escalation_triggered:
+                calculated_confidence = "Medium-Ambiguous"
+            elif score >= 85:
+                calculated_confidence = "Medium"
+            else:
+                calculated_confidence = "Low"
+        
+        result_json["PipelineConfidence"] = calculated_confidence
+
         # Ensure AI-specific fields have defaults
         ai_field_defaults = {
             "RelevanceScore": 0,
@@ -561,7 +587,7 @@ def enrich_record(
             "PerturbationsUsed": "",
             "GEO_Validated": "",
             "SRA_Validated": "",
-            "PipelineConfidence": "Low"
+            # Note: PipelineConfidence already set above, no default needed
         }
         
         for field, default in ai_field_defaults.items():
@@ -569,6 +595,7 @@ def enrich_record(
                 result_json[field] = default
 
         return result_json
+
 
     except Exception as e:
         logger.error(f"Enrichment failed for {pmid}: {e}")

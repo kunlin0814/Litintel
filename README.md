@@ -13,12 +13,13 @@ This is not just a literature search script—it's a **Research Intelligence Lay
 It continuously monitors PubMed, uses AI to understand and score each paper, and persists structured insights to Notion and Google Drive. Your research "memory" grows over time, queryable by humans and AI agents alike (e.g., NotebookLM).
 
 **Key Capabilities:**
--   **AI Enrichment**: OpenAI (GPT-5 Nano/Mini) or Gemini extract structured insights.
--   **Cost-Optimized**: Automatic **Prompt Caching** reduces API costs by ~50% for repetitive system instructions.
+-   **Two-Pass AI Architecture**: Pass 1 (Scoring) uses evidence-appropriate models; Pass 2 (Methods) extracts computational workflows from high-scoring full-text papers.
+-   **Cost-Optimized**: Automatic **Prompt Caching** reduces API costs by ~50% through cache-aware processing order (Abstract-only → Full-text).
+-   **Shadow Judge**: Heuristic-triggered secondary validation with evidence requirement (quote or self-contradiction must be cited).
 -   **Smart Search**: Fetches papers in **batches of 200** to efficiently bypass duplicates and find new content using deep pagination (up to 1,000 papers).
 -   **Provenance Tracking**: Know exactly what evidence the AI used (`AI_EvidenceLevel`: FullText or Abstract).
 -   **Dual-Confidence Accession**: GEO/SRA candidates are regex-extracted, then AI-validated.
--   **Multi-Storage Sync**: Notion (human review), Google Drive JSONL (machine ingestion), CSV (archival).
+-   **Multi-Storage Sync**: Notion (human review), Google Drive JSONL/Markdown (machine ingestion), CSV (archival).
 -   **Automated Scheduling**: Prefect Cloud runs every two weeks, hands-free.
 
 ---
@@ -74,17 +75,45 @@ src/litintel/
 ├── config.py           # Pydantic configuration models
 ├── parsing.py          # PubMed XML and PMC parsing
 ├── pipeline/
-│   ├── tier1.py        # Tier 1: Disease-focused pipeline
-│   └── tier2.py        # Tier 2: Methods-focused pipeline
+│   ├── tier1.py        # Tier 1: Disease-focused pipeline (Two-Pass)
+│   ├── tier2.py        # Tier 2: Methods-focused pipeline
+│   └── shared.py       # Common utilities (dedup, save)
 ├── pubmed/
 │   └── client.py       # NCBI E-Utilities integration
 ├── enrich/
-│   ├── ai_client.py    # OpenAI/Gemini abstraction
-│   ├── schema.py       # Pydantic models (Tier1Record, Tier2Record)
-│   └── prompt_templates.py # System prompts
-└── storage/
-    ├── notion.py       # Notion API sync
-    └── drive.py        # Google Drive JSONL/Markdown sync
+│   ├── ai_client.py    # OpenAI/Gemini with Two-Pass & Shadow Judge
+│   ├── schema.py       # Pydantic models (Tier1Record, CompMethods)
+│   ├── prompt_templates.py # System prompts (Scoring + Methods)
+│   └── escalation_heuristics.py # H1-H4 heuristic checks
+├── storage/
+│   ├── notion.py       # Notion API sync
+│   └── drive.py        # Google Drive JSONL/Markdown sync
+└── utils/
+    └── run_log.py      # Execution audit trail
+```
+
+---
+
+## Two-Pass AI Architecture
+
+The pipeline uses a cache-optimized two-pass system:
+
+### Pass 1: Scoring & Metadata
+- **Abstract-only papers** → `gpt-5-nano` (processed first to maximize cache hits)
+- **Full-text papers** → `gpt-5-mini` (processed second, grouped together)
+
+### Pass 2: Methods Extraction (Batched)
+- Triggers only for papers with **Score ≥ 88** and full-text availability
+- Runs in **parallel** (ThreadPoolExecutor, max 3 workers) to keep prompt cache warm
+- Extracts `comp_methods` with structured `analyses` blocks
+
+**Config (`configs/tier1_pca.yaml`):**
+```yaml
+ai:
+  pass1_model_fulltext: "gpt-5-mini"  # Pass 1 if Full Text
+  pass1_model_abstract: "gpt-5-nano"  # Pass 1 if Abstract Only
+  pass2_model: "gpt-5-mini"           # Pass 2 (Methods)
+  pass2_min_score: 88                 # Trigger threshold for Pass 2
 ```
 
 ---
@@ -103,19 +132,27 @@ All AI-extracted fields are strictly typed:
 | `KeyFindings` | Semicolon-separated discoveries. |
 | `DataTypes` | Controlled vocab (scRNA-seq, Visium, etc.). |
 | `AI_EvidenceLevel` | "FullText" or "Abstract". |
-| `PipelineConfidence` | Low / Medium / High / Error. |
-| `EscalationTriggered` | Boolean: Was Shadow Judge invoked? |
+| `PipelineConfidence` | Low / Medium / Medium-Ambiguous / High / Error. |
+| `EscalationTriggered` | Boolean: Were heuristics flagged? |
 | `EscalationReason` | Why escalation occurred (heuristic or Shadow Judge result). |
+| `comp_methods` | Structured methods (Pass 2 only). |
 
 ---
 
 ## Escalation Logic (Shadow Judge)
 
-Papers with **ambiguous scores (70-79)** or structural issues are validated by a second AI model:
+Papers flagged by **heuristics (H1-H4)** are validated by Shadow Judge:
 
-1. **Deterministic Heuristics** (H1-H4) flag papers for review
-2. **Shadow Judge** (`gpt-5-mini`) audits flagged papers with full-text evidence
-3. **Evidence Requirement**: Mini must quote text to overturn Nano
+### Heuristics
+- **H1**: Short rationale (< 50 chars)
+- **H2**: Ambiguous score range [70-79]
+- **H3**: Text/score mismatch (high language, low score OR vice versa)
+- **H4**: High relevance but low reuse score
+
+### Shadow Judge Rules
+1. **OVERTURN** only for material factual errors (must cite evidence)
+2. **DISAGREE** if concerns exist but no proof
+3. **PASS** if Nano's assessment is acceptable
 4. **25% Guardrail**: Pipeline halts if overturn rate exceeds threshold
 
 **Output:**

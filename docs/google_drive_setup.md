@@ -4,10 +4,11 @@
 
 The pipeline syncs literature to Google Drive for AI ingestion (e.g., NotebookLM).
 
-**Output:**
-- `papers.jsonl`: Machine-readable log of all papers.
+**Output Files:**
+- `papers.jsonl`: Machine-readable log of all papers (root folder).
 - `NotebookLM_Corpus/Literature_{Year}_Q{Q}.md`: All papers, sorted by relevance.
 - `NotebookLM_Corpus/HighConfidence_Analysis.md`: Papers with `RelevanceScore >= 90`.
+- `NotebookLM_Corpus/CompMethods_{Year}_Q{Q}.md`: Computational methods from full-text papers (Pass 2 output).
 
 ---
 
@@ -24,8 +25,9 @@ The pipeline syncs literature to Google Drive for AI ingestion (e.g., NotebookLM
 ### 2. Share Drive Folder
 
 1. Create a folder in Google Drive (e.g., `Literature_Auto`).
-2. Copy the **Folder ID** from the URL.
+2. Copy the **Folder ID** from the URL (the long string after `/folders/`).
 3. **Share** the folder with the Service Account email (Editor access).
+4. Optionally create a subfolder called `NotebookLM_Corpus` for Markdown files.
 
 ### 3. Configure Environment
 
@@ -42,6 +44,38 @@ gcloud auth application-default login
 
 ---
 
+## Output Structure
+
+```
+Literature_Auto/                    # Root folder (GOOGLE_DRIVE_FOLDER_ID)
+├── papers.jsonl                    # JSONL log (one line per paper)
+└── NotebookLM_Corpus/              # Markdown subfolder
+    ├── Literature_2025_Q1.md       # All Q1 2025 papers
+    ├── Literature_2025_Q2.md       # All Q2 2025 papers
+    ├── HighConfidence_Analysis.md  # Score >= 90 papers (rolling)
+    └── CompMethods_2025_Q1.md      # Methods from full-text papers
+```
+
+---
+
+## Drive Sync Thresholds
+
+The pipeline applies different thresholds for different outputs:
+
+| Output | Threshold | Notes |
+|--------|-----------|-------|
+| `papers.jsonl` | All papers | Complete machine-readable log |
+| `Literature_{Year}_Q{Q}.md` | Score ≥ 87 + Full-text | High-quality papers with full evidence |
+| `HighConfidence_Analysis.md` | Score ≥ 90 + Full-text | "Must read" papers with full evidence |
+| `CompMethods_{Year}_Q{Q}.md` | Score ≥ 85 + Full-text | Methods from high-quality full-text papers |
+
+> [!NOTE]
+> - `Literature_Q.md` requires **both** Score ≥ 87 AND full-text to ensure high confidence.
+> - The `pass2_min_score: 88` threshold only controls **Pass 2 methods extraction**, not Drive filtering.
+
+
+---
+
 ## NotebookLM Usage
 
 1. Open [NotebookLM](https://notebooklm.google.com/).
@@ -49,3 +83,9 @@ gcloud auth application-default login
 3. Add Source > Google Drive.
 4. Select `HighConfidence_Analysis.md` or the quarterly file.
 5. Ask questions across your literature corpus!
+
+**Recommended Sources:**
+- **HighConfidence_Analysis.md**: Best papers only (Score >= 90)
+- **CompMethods_{Year}_Q{Q}.md**: Computational methods focus
+- **Literature_{Year}_Q{Q}.md**: Complete quarterly coverage (Score >= 80)
+

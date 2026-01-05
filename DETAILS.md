@@ -6,14 +6,14 @@
 
 ## 1. System Overview
 
-LitIntel is a modular, tiered literature pipeline. Configuration is YAML-driven, AI enrichment is multi-provider, and outputs flow to Notion, Google Drive, and CSV.
+LitIntel is a modular, tiered literature pipeline. Configuration is YAML-driven, AI enrichment uses a Two-Pass architecture with OpenAI or Gemini, and outputs flow to Notion, Google Drive, and CSV.
 
 ### Core Principles
 
 1.  **Memory, Not Search**: The pipeline doesn't just find papers—it remembers them. Notion stores structured insights, Drive stores machine-readable JSONL.
 2.  **Provenance**: Every record knows where its data came from (`AI_EvidenceLevel`, `FullTextUsed`, `PipelineConfidence`).
 3.  **Dual-Confidence Accessions**: GEO/SRA IDs are extracted via regex (`_Candidates`), then validated by AI (`_Validated`).
-4.  **Cost-Aware AI**: OpenAI uses a Nano→Mini escalation strategy; Gemini uses native JSON mode.
+4.  **Cost-Aware AI**: Two-Pass Architecture with cache-optimized processing order.
 
 ---
 
@@ -31,14 +31,28 @@ discovery:
     - >
       ("Prostatic Neoplasms"[MeSH Terms] OR prostate[tiab] ...)
       AND ("spatial transcriptom*"[tiab] OR ...)
-  retmax: 50
-  reldays: 120
+  retmax: 25
+  reldays: 180
 
 ai:
-  provider: openai  # or gemini
-  model_default: "gpt-5-nano"
-  model_escalate: "gpt-5-mini"
+  provider: openai
+  # Two-Pass Architecture
+  pass1_model_fulltext: "gpt-5-mini"  # Pass 1 (Scoring) if Full Text
+  pass1_model_abstract: "gpt-5-nano"  # Pass 1 (Scoring) if Abstract Only
+  pass2_model: "gpt-5-mini"           # Pass 2 (Methods extraction)
+  pass2_min_score: 88                 # Trigger threshold for Pass 2
+
+  max_chars: 80000
   prompt_template: "tier1_pca"
+
+  escalation_triggers:
+    score_range: [70, 79]       # H2: Ambiguous relevance range
+    min_rationale_length: 50    # H1: Short rationale threshold
+    escalate_on_high_reuse: 4   # H4: High Reuse Score
+    h3_high_score_thresh: 80    # H3: High score threshold for mismatch
+    h3_low_score_thresh: 70     # H3: Low score threshold for mismatch
+    escalate_min_score: 87      # H5: Direct escalation for High Tier 3+
+    retry_on_error: true        # Malformed JSON -> retry with escalate model
 
 storage:
   notion:
@@ -46,7 +60,6 @@ storage:
     database_id_env: "NOTION_DB_ID"
   drive:
     enabled: true
-    folder_id_env: "GOOGLE_DRIVE_FOLDER_ID"
   csv:
     enabled: true
     filename: "papers_tier1.csv"
@@ -62,7 +75,7 @@ dedup:
 ```mermaid
 graph TD
     A[Load Config] --> B[Build Notion Index]
-    B --> C[PubMed Search]
+    B --> C[PubMed Search - Batched 200]
     C --> D[Filter Already-Seen PMIDs]
     D --> E[Fetch Abstracts & MeSH]
     E --> F[Deduplicate Records]
@@ -70,12 +83,23 @@ graph TD
     G -- Yes --> H[Fetch PMC Full-Text]
     G -- No --> I[Set AI_EvidenceLevel = Abstract]
     H --> J[Set AI_EvidenceLevel = FullText]
-    I --> K[AI Enrichment Loop]
+    I --> K[Partition: Abstract vs Full-Text]
     J --> K
-    K --> L[Upsert to Notion]
-    L --> M[Sync to Drive JSONL/Markdown]
-    M --> N[Append Run Log]
+    K --> L[Pass 1: Abstract-only Nano first]
+    L --> M[Pass 1: Full-text Mini second]
+    M --> N[Pass 2: Batched Methods Extraction]
+    N --> O[Upsert to Notion]
+    O --> P[Sync to Drive JSONL/Markdown]
+    P --> Q[Append Run Log]
 ```
+
+### Cache-Optimized Processing Order
+
+To maximize OpenAI prompt caching (~50% cost reduction):
+
+1. **Abstract-only papers** processed first with `gpt-5-nano`
+2. **Full-text papers** processed second with `gpt-5-mini`
+3. **Pass 2** runs in parallel batch after all Pass 1 completes
 
 ---
 
@@ -89,13 +113,30 @@ graph TD
 | `DOI` | Optional[str] | DOI |
 | `Title` | str | Paper title |
 | `Abstract` | str | Abstract text |
+| `Authors` | Optional[str] | Author list |
+| `Journal` | Optional[str] | Journal name |
+| `Year` | Optional[str] | Publication year |
+| `PubDate` | Optional[str] | Full date YYYY-MM-DD |
 | `FullTextUsed` | bool | Was PMC full-text available? |
 | `AI_EvidenceLevel` | str | "Abstract" or "FullText" |
-| `PipelineConfidence` | str | "Low", "Medium", "High", "Error" |
+| `PipelineConfidence` | str | "Low", "Medium", "Medium-Ambiguous", "High", "Error" |
 | `WhyYouMightCare` | Optional[str] | Decision-support insight |
 | `GEO_Candidates` | Optional[str] | Regex-extracted GEO IDs |
 | `GEO_Validated` | Optional[str] | AI-validated GEO IDs |
+| `SRA_Candidates` | Optional[str] | Regex-extracted SRA IDs |
+| `SRA_Validated` | Optional[str] | AI-validated SRA IDs |
 | `MeSH_Major` | Optional[str] | Major MeSH headings |
+
+### PipelineConfidence Calculation
+
+| Confidence | Criteria |
+|------------|----------|
+| **High** | Full-text evidence + Score ≥ 80 + No heuristic escalation triggered |
+| **Medium** | Full-text + Score ≥ 70, OR Abstract-only + Score ≥ 85 |
+| **Medium-Ambiguous** | Abstract-only + Heuristic escalation was triggered |
+| **Low** | Abstract-only + Score < 85, OR Full-text + Score < 70 |
+| **Error** | Processing failed |
+
 
 ### Tier1Record (extends BaseRecord)
 
@@ -112,52 +153,81 @@ graph TD
 | `Group` | str | PI / Lab |
 | `CellIdentitySignatures` | str | e.g., "Basal: KRT5, KRT14" |
 | `PerturbationsUsed` | str | e.g., "PTEN loss; Enzalutamide" |
+| `comp_methods` | Optional[CompMethods] | Pass 2 methods extraction |
+| `EscalationTriggered` | bool | Were heuristics flagged? |
+| `EscalationReason` | str | Why escalation occurred |
+
+### CompMethods (Pass 2 Output)
+
+```python
+class CompMethods(BaseModel):
+    summary_2to3_sentences: str = ""
+    analyses: List[AnalysisBlock] = []  # List of analysis pipelines
+    stats_models: List[str] = []        # Max 5
+    tags: List[str] = []                # Controlled vocab
+    reuse_score_0to5: int = 0
+
+class AnalysisBlock(BaseModel):
+    analysis_name: str = ""
+    purpose: str = ""
+    steps: List[AnalysisStep] = []
+
+class AnalysisStep(BaseModel):
+    step: str = ""
+    tool: str = ""
+    rationale: str = ""
+```
 
 ---
 
 ## 5. AI Enrichment (`src/litintel/enrich/`)
 
+### Two-Pass Architecture
+
+**Pass 1: Scoring & Metadata** (`enrich_record()`)
+- Model selection based on `has_full_text`:
+  - Abstract-only → `pass1_model_abstract` (default: `gpt-5-nano`)
+  - Full-text → `pass1_model_fulltext` (default: `gpt-5-mini`)
+- Returns all metadata fields + `RelevanceScore`
+- Marks papers eligible for Pass 2 via `_pass2_eligible` flag
+
+**Pass 2: Methods Extraction** (`enrich_pass2_methods()`)
+- Triggered if `RelevanceScore >= pass2_min_score` (default: 88)
+- Uses dedicated `_TIER1_PCA_METHODS_INSTRUCTION` prompt
+- Runs in parallel batch (ThreadPoolExecutor, max 3 workers)
+- Extracts structured `comp_methods` object
+
 ### Provider Abstraction
 
--   **OpenAI**: Uses `response_format: {"type": "json_object"}`. Model selection is automatic: `gpt-5-nano` by default.
+-   **OpenAI**: Uses `response_format: {"type": "json_object"}`. Model selection is automatic via config.
 -   **Gemini**: Uses `response_mime_type: "application/json"` with a full Pydantic-derived schema.
 
 ### Shadow Judge Escalation
 
-Papers with **ambiguous scores (70-79)** or structural issues are validated by `gpt-5-mini`:
+Papers flagged by **heuristics (H1-H4)** are validated by Shadow Judge (`gpt-5-mini`):
 
-1. **Deterministic Heuristics** (`escalation_heuristics.py`):
+1. **Heuristics** (`escalation_heuristics.py`):
    - H1: Short rationale (< 50 chars)
    - H2: Score in ambiguous range [70-79]
    - H3: Text/score mismatch
    - H4: High relevance but low reuse
-2. **Shadow Judge**: Mini reviews raw text and may overturn Nano (with quoted evidence)
+
+2. **Shadow Judge Rules**:
+   - OVERTURN: Only for factual errors with quoted evidence
+   - DISAGREE: Concerns exist but no proof
+   - PASS: Nano's assessment is acceptable
+
 3. **Guardrail**: Pipeline halts if overturn rate > 25%
 
-### Computational Methods (`comp_methods`)
-
-Full-text papers get structured methods extraction:
-
-```json
-{
-  "analyses": [
-    {
-      "analysis_name": "Single-cell preprocessing",
-      "purpose": "To normalize and integrate samples",
-      "steps": [
-        {"step": "SCTransform", "tool": "Seurat v5", "rationale": "Variance stabilization"}
-      ]
-    }
-  ],
-  "stats_models": ["Negative binomial"],
-  "tags": ["integration", "batch_correction"]
-}
-```
+4. **Logging**:
+   - `ESCALATION_COUNTERFACTUALS`: Tracks all judge decisions
+   - `ESCALATION_DISAGREE_LOG`: Tracks DISAGREE cases for rubric tuning
 
 ### Prompt Templates (`prompt_templates.py`)
 
--   `TIER1_SYSTEM_PROMPT`: PhD-level curator for prostate cancer spatial omics.
--   `TIER2_SYSTEM_PROMPT`: Methods-focused curator.
+-   `_TIER1_PCA_SCORING_INSTRUCTION`: PhD-level curator for prostate cancer spatial omics scoring.
+-   `_TIER1_PCA_METHODS_INSTRUCTION`: Methods-focused extraction prompt.
+-   `TIER2_SYSTEM_PROMPT`: Methods Discovery tier.
 -   Controlled vocabulary for `DataTypes` (e.g., `scRNA-seq`, `Visium`, `multiome`).
 -   Instructions for `Group` extraction (Corresponding Author → Last Author → Fallback).
 -   GEO/SRA validation logic: "Include only if clearly from THIS study."
@@ -205,8 +275,10 @@ Registers the flow with Prefect Cloud:
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `ImportError: load_config_from_yaml` | Old code version | Pull latest from GitHub. |
-| `API 429 (Rate Limit)` | Too many requests | Increase `time.sleep()` in AI loop. |
+| `API 429 (Rate Limit)` | Too many requests | Automatic retry with 2s delay. |
 | `NOTION_DB_ID not set` | Missing env var | Check `.env` and `load_dotenv()`. |
+| `OPENAI_API_KEY not set` | Missing API key | Ensure `.env` contains valid key. |
+| `Shadow Judge overturn rate > 25%` | Rubric issue | Review `ESCALATION_COUNTERFACTUALS` logs. |
 | `MissingFlowError` in Prefect | Old repo referenced | Ensure `deploy_scheduled.py` points to correct GitHub URL. |
 
 ---
@@ -216,9 +288,16 @@ Registers the flow with Prefect Cloud:
 | Service | Usage | Cost (Monthly) |
 |---------|-------|----------------|
 | NCBI | ~400 requests/run | Free |
-| OpenAI (Nano) | ~50 papers/run | ~$0.01 |
+| OpenAI (Nano) | Abstract-only papers | ~$0.005/paper |
+| OpenAI (Mini) | Full-text papers | ~$0.02/paper |
+| OpenAI (Pass 2) | High-scoring papers | ~$0.03/paper |
 | Notion | ~50 writes/run | Free |
 | Prefect Cloud | 2 runs/month | Free |
+
+**Cost Optimization Features:**
+- Prompt caching reduces input token costs by ~50%
+- Two-Pass skips expensive methods extraction for low-scoring papers
+- Abstract-only papers use cheaper Nano model
 
 ---
 

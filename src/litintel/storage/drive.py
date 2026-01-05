@@ -295,7 +295,6 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
     lines.append(f"**Published**: {rec.get('PubDate', rec.get('Year', 'N/A'))}")
     lines.append(f"**Group**: {normalize_text(rec.get('Group', ''))}")
     lines.append(f"**RelevanceScore**: {rec.get('RelevanceScore')}")
-    lines.append(f"**PipelineConfidence**: {rec.get('PipelineConfidence', 'N/A')}")
     lines.append("")
     lines.append(f"**PaperRole**: {normalize_text(rec.get('PaperRole', ''))}")
     lines.append(f"**Theme**: {normalize_text(rec.get('Theme', ''))}")
@@ -602,15 +601,18 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
     for rec in sorted_records:
         score = rec.get("RelevanceScore", 0)
         
-        # Skip low-relevance papers (only write score >= 80 to Drive)
-        if score < 80:
-            continue
-            
+        # Skip papers that don't meet quarterly criteria
+        # Quarterly file: Score >= 87 AND Full-text required
+        has_full_text = rec.get("FullTextUsed", False)
+        
         md_text = format_markdown_entry(rec)
         
-        quarterly_buffer.append(md_text)
+        # Literature_Q.md: Only high-quality full-text papers
+        if score >= 87 and has_full_text:
+            quarterly_buffer.append(md_text)
         
-        if score >= 90:
+        # HighConfidence_Analysis.md: Score >= 90 AND full-text
+        if score >= 90 and has_full_text:
             high_conf_buffer.append(md_text)
     
     # Upload quarterly
@@ -631,10 +633,10 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
         except Exception as e:
             logger.error(f"Failed to append to {high_conf_filename}: {e}")
     
-    # 3. Computational Methods (full-text papers with score >= 80 only → quarterly append file)
+    # 3. Computational Methods (full-text papers with score >= 85 only → quarterly append file)
     fulltext_records = [
         r for r in records 
-        if r.get("FullTextUsed") and r.get("comp_methods") and r.get("RelevanceScore", 0) >= 80
+        if r.get("FullTextUsed") and r.get("comp_methods") and r.get("RelevanceScore", 0) >= 85
     ]
     if fulltext_records:
         try:
