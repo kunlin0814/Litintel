@@ -505,45 +505,10 @@ def enrich_record(
                 result_json["_pass2_eligible"] = False
                 logger.info(f"PMID {pmid}: Score {score} < {threshold}. Skipping Pass 2.")
 
-        # -------------------------------------------------------------------------
-        # LEGACY / SHADOW JUDGE (Heuristics)
-        # -------------------------------------------------------------------------
-        # Retain heuristic checks for scoring integrity
-        
-        if config.escalation_triggers:
-            from litintel.enrich.escalation_heuristics import should_escalate
-            heuristic_escalate, signals = should_escalate(result_json, config.escalation_triggers)
-            
-            if heuristic_escalate:
-                # Skip Shadow Judge if abstract-only (no Methods/Results to validate against)
-                # Note: 'has_full_text' check handles this
-                if not has_full_text:
-                    result_json["EscalationTriggered"] = False
-                    result_json["EscalationReason"] = "HEURISTIC_FLAGGED_ABSTRACT_ONLY"
-                else:
-                    # Shadow Judge
-                    override, decision, details = _shadow_judge(
-                        client, 
-                        result_json, 
-                        abstract=abstract,
-                        methods=methods_text,
-                        results=results_text,
-                        pmid=pmid,
-                        model=config.model_escalate 
-                    )
-                    
-                    result_json["EscalationTriggered"] = True
-                    result_json["EscalationReason"] = f"Heuristics: {signals}"
-                    result_json["ShadowJudgeDecision"] = decision
-                    result_json["ShadowJudgeDetails"] = details
-                    
-                    if override:
-                        result_json = override
-                        # If override happened, relevance might have changed. 
-                        # We do NOT re-trigger Pass 2 here (too complex), but we log it.
-                        logger.warning(f"PMID {pmid}: Shadow Judge OVERTURNED result.")
-            else:
-                 result_json["EscalationTriggered"] = False
+        # Note: Shadow Judge / Heuristic escalation logic removed.
+        # With Two-Pass Architecture, full-text papers already use gpt-5-mini directly,
+        # making the Nano→Mini escalation validation unnecessary.
+        result_json["EscalationTriggered"] = False
 
         # Calculate PipelineConfidence based on evidence and processing
         # High: Full-text + high score + no heuristic escalation triggered

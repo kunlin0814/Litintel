@@ -202,27 +202,6 @@ class AnalysisStep(BaseModel):
 -   **OpenAI**: Uses `response_format: {"type": "json_object"}`. Model selection is automatic via config.
 -   **Gemini**: Uses `response_mime_type: "application/json"` with a full Pydantic-derived schema.
 
-### Shadow Judge Escalation
-
-Papers flagged by **heuristics (H1-H4)** are validated by Shadow Judge (`gpt-5-mini`):
-
-1. **Heuristics** (`escalation_heuristics.py`):
-   - H1: Short rationale (< 50 chars)
-   - H2: Score in ambiguous range [70-79]
-   - H3: Text/score mismatch
-   - H4: High relevance but low reuse
-
-2. **Shadow Judge Rules**:
-   - OVERTURN: Only for factual errors with quoted evidence
-   - DISAGREE: Concerns exist but no proof
-   - PASS: Nano's assessment is acceptable
-
-3. **Guardrail**: Pipeline halts if overturn rate > 25%
-
-4. **Logging**:
-   - `ESCALATION_COUNTERFACTUALS`: Tracks all judge decisions
-   - `ESCALATION_DISAGREE_LOG`: Tracks DISAGREE cases for rubric tuning
-
 ### Prompt Templates (`prompt_templates.py`)
 
 -   `_TIER1_PCA_SCORING_INSTRUCTION`: PhD-level curator for prostate cancer spatial omics scoring.
@@ -247,10 +226,9 @@ Papers flagged by **heuristics (H1-H4)** are validated by Shadow Judge (`gpt-5-m
 
 -   **JSONL**: `papers.jsonl` in root folder (machine-readable log).
 -   **Markdown Buckets** (in `NotebookLM_Corpus/`):
-    -   `Literature_{Year}_Q{Q}.md`: All papers, sorted by score.
-    -   `HighConfidence_Analysis.md`: Papers with `RelevanceScore >= 90`.
-    -   `CompMethods_{Year}_Q{Q}.md`: Computational methods from full-text papers.
--   **Local Markdown**: `papers_tier1_validated.md` - Only Shadow Judge validated papers (human QA).
+    -   `Literature_{Year}_Q{Q}.md`: Score ≥ 87 + Full-text papers.
+    -   `HighConfidence_Analysis.md`: Score ≥ 90 + Full-text papers.
+    -   `CompMethods_{Year}_Q{Q}.md`: Score ≥ 85 + Full-text papers with methods.
 
 ---
 
@@ -278,7 +256,6 @@ Registers the flow with Prefect Cloud:
 | `API 429 (Rate Limit)` | Too many requests | Automatic retry with 2s delay. |
 | `NOTION_DB_ID not set` | Missing env var | Check `.env` and `load_dotenv()`. |
 | `OPENAI_API_KEY not set` | Missing API key | Ensure `.env` contains valid key. |
-| `Shadow Judge overturn rate > 25%` | Rubric issue | Review `ESCALATION_COUNTERFACTUALS` logs. |
 | `MissingFlowError` in Prefect | Old repo referenced | Ensure `deploy_scheduled.py` points to correct GitHub URL. |
 
 ---

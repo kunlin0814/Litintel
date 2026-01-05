@@ -132,32 +132,8 @@ All AI-extracted fields are strictly typed:
 | `KeyFindings` | Semicolon-separated discoveries. |
 | `DataTypes` | Controlled vocab (scRNA-seq, Visium, etc.). |
 | `AI_EvidenceLevel` | "FullText" or "Abstract". |
-| `PipelineConfidence` | Low / Medium / Medium-Ambiguous / High / Error. |
-| `EscalationTriggered` | Boolean: Were heuristics flagged? |
-| `EscalationReason` | Why escalation occurred (heuristic or Shadow Judge result). |
+| `PipelineConfidence` | Low / Medium / High / Error. |
 | `comp_methods` | Structured methods (Pass 2 only). |
-
----
-
-## Escalation Logic (Shadow Judge)
-
-Papers flagged by **heuristics (H1-H4)** are validated by Shadow Judge:
-
-### Heuristics
-- **H1**: Short rationale (< 50 chars)
-- **H2**: Ambiguous score range [70-79]
-- **H3**: Text/score mismatch (high language, low score OR vice versa)
-- **H4**: High relevance but low reuse score
-
-### Shadow Judge Rules
-1. **OVERTURN** only for material factual errors (must cite evidence)
-2. **DISAGREE** if concerns exist but no proof
-3. **PASS** if Nano's assessment is acceptable
-4. **25% Guardrail**: Pipeline halts if overturn rate exceeds threshold
-
-**Output:**
-- `papers_tier1_validated.md`: Only Shadow Judge validated papers (human QA)
-- `ESCALATION_COUNTERFACTUALS`: Logged overturns for rubric tuning
 
 ---
 
