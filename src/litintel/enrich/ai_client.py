@@ -595,7 +595,7 @@ def enrich_pass2_methods(
     methods_system_prompt = _TIER1_PCA_METHODS_INSTRUCTION
     methods_model = getattr(config, 'pass2_model', config.model_escalate)
     
-    # Construct Methods-Specific User Prompt
+    # Construct Methods-Specific User Prompt (Methods + Results sections)
     methods_user_prompt = f"PMID: {pmid}\nAnalyze these sections for computational methods:\n\n"
     methods_user_prompt += f"=== METHODS ===\n{methods_text}\n\n"
     methods_user_prompt += f"=== RESULTS ===\n{results_text}\n"

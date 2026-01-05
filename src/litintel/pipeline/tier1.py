@@ -144,11 +144,17 @@ def run_tier1_pipeline(config: AppConfig):
     for rec in clean_records:
         pmcid = rec.get("PMCID")
         if pmcid and pmcid in pmc_data:
-            rec["FullTextUsed"] = True
-            rec["AI_EvidenceLevel"] = "FullText"
+            pmc_methods = pmc_data[pmcid]["methods"]
+            pmc_results = pmc_data[pmcid]["results"]
+            
+            # Only mark as FullText if we actually have methods or results content
+            has_content = bool(pmc_methods.strip() or pmc_results.strip())
+            
+            rec["FullTextUsed"] = has_content
+            rec["AI_EvidenceLevel"] = "FullText" if has_content else "Abstract"
             rec["PMC_FullText"] = pmc_data[pmcid]["full_text"]
-            rec["PMC_Methods"] = pmc_data[pmcid]["methods"]
-            rec["PMC_Results"] = pmc_data[pmcid]["results"]
+            rec["PMC_Methods"] = pmc_methods
+            rec["PMC_Results"] = pmc_results
             
             # Merge PMC-found GEO/SRA with PubMed XML candidates
             if pmc_data[pmcid]["geo_pmc"]:
@@ -174,6 +180,12 @@ def run_tier1_pipeline(config: AppConfig):
     full_text = [r for r in clean_records if r.get("FullTextUsed")]
     
     logger.info(f"Cache Optimization: Processing {len(abstract_only)} Abstract-only (Nano) first, then {len(full_text)} Full-text (Mini)")
+    
+    # Debug: Show actual order
+    if abstract_only:
+        logger.info(f"  Abstract-only PMIDs: {[r.get('PMID') for r in abstract_only]}")
+    if full_text:
+        logger.info(f"  Full-text PMIDs: {[r.get('PMID') for r in full_text]}")
     
     # Process in optimized order: Nano batch -> Mini batch
     ordered_records = abstract_only + full_text
@@ -219,25 +231,40 @@ def run_tier1_pipeline(config: AppConfig):
         enriched_records.append(full_rec)
 
     # 4b. PHASE 2: BATCHED METHODS EXTRACTION (Cache Optimized)
-    # Run all Pass 2 calls together to maximize prompt caching efficiency.
+    # Run all Pass 2 calls CONCURRENTLY to maximize prompt caching efficiency.
+    # Sequential calls have 1+ minute gaps causing cache expiry.
     pass2_eligible = [r for r in enriched_records if r.get("_pass2_eligible")]
     
     if pass2_eligible:
-        logger.info(f"Pass 2 Batch: Extracting methods for {len(pass2_eligible)} high-scoring papers...")
+        logger.info(f"Pass 2 Batch: Extracting methods for {len(pass2_eligible)} high-scoring papers (parallel)...")
         from litintel.enrich.ai_client import enrich_pass2_methods
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         
-        for rec in pass2_eligible:
+        def run_pass2(rec):
             pmid = rec.get("PMID")
-            methods_result = enrich_pass2_methods(
+            result = enrich_pass2_methods(
                 pmid=pmid,
                 methods_text=rec.get("PMC_Methods", ""),
                 results_text=rec.get("PMC_Results", ""),
                 config=config.ai
             )
-            # Merge comp_methods into the record
-            rec.update(methods_result)
-            # Clean up internal marker
-            rec.pop("_pass2_eligible", None)
+            return pmid, result
+        
+        # Run Pass 2 calls in parallel (max 3 concurrent to avoid rate limits)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(run_pass2, rec): rec for rec in pass2_eligible}
+            
+            for future in as_completed(futures):
+                rec = futures[future]
+                try:
+                    pmid, methods_result = future.result()
+                    rec.update(methods_result)
+                except Exception as e:
+                    logger.error(f"Pass 2 failed for {rec.get('PMID')}: {e}")
+                    rec["comp_methods_error"] = str(e)
+                
+                # Clean up internal marker
+                rec.pop("_pass2_eligible", None)
     
     # Clean up markers for non-eligible records too
     for rec in enriched_records:
