@@ -492,43 +492,17 @@ def enrich_record(
         result_json["RelevanceScore"] = score
         
         # -------------------------------------------------------------------------
-        # PASS 2: METHODS EXTRACTION (Conditional)
+        # PASS 2: METHODS EXTRACTION (DEFERRED FOR BATCHING)
         # -------------------------------------------------------------------------
+        # Pass 2 is now executed as a separate phase in tier1.py to maximize cache efficiency.
+        # We just mark eligibility here.
         if use_two_pass and has_full_text:
             threshold = getattr(config, 'pass2_min_score', 88)
-            
             if score >= threshold:
-                logger.info(f"PMID {pmid}: Score {score} >= {threshold}. Triggering Pass 2 (Methods)...")
-                
-                # Load Methods Prompt
-                # Import inside function to avoid circular imports if any, but checking litintel structure
-                from litintel.enrich.prompt_templates import _TIER1_PCA_METHODS_INSTRUCTION
-                methods_system_prompt = _TIER1_PCA_METHODS_INSTRUCTION
-                methods_model = getattr(config, 'pass2_model', config.model_escalate)
-                
-                # Construct Methods-Specific User Prompt
-                methods_user_prompt = f"PMID: {pmid}\nAnalyze these sections for computational methods:\n\n"
-                methods_user_prompt += f"=== METHODS ===\n{methods_text}\n\n"
-                # Sometimes results contain implementation details
-                methods_user_prompt += f"=== RESULTS ===\n{results_text}\n"
-                
-                # Call API (Pass 2)
-                try:
-                    # Pass empty schema dict or minimal stub since prompt defines schema
-                    methods_json, m_usage = _call_openai(client, methods_model, methods_system_prompt, methods_user_prompt, {})
-                    
-                    logger.info(f"PMID {pmid} [Pass 2] Usage: In={m_usage.get('input')}, Out={m_usage.get('output')}")
-                    
-                    # Merge 'comp_methods' into main result
-                    if "comp_methods" in methods_json:
-                        result_json["comp_methods"] = methods_json["comp_methods"]
-                    else:
-                        logger.warning(f"PMID {pmid} [Pass 2] returned no 'comp_methods' key.")
-                        
-                except Exception as e:
-                    logger.error(f"PMID {pmid} [Pass 2] Failed: {e}. Continuing with partial result.")
-                    result_json["comp_methods_error"] = str(e)
+                result_json["_pass2_eligible"] = True
+                logger.info(f"PMID {pmid}: Score {score} >= {threshold}. Marked for Pass 2 (batched).")
             else:
+                result_json["_pass2_eligible"] = False
                 logger.info(f"PMID {pmid}: Score {score} < {threshold}. Skipping Pass 2.")
 
         # -------------------------------------------------------------------------
@@ -599,3 +573,51 @@ def enrich_record(
     except Exception as e:
         logger.error(f"Enrichment failed for {pmid}: {e}")
         return {"RelevanceScore": -1, "WhyRelevant": f"Error: {str(e)}", "PipelineConfidence": "Error"}
+
+
+def enrich_pass2_methods(
+    pmid: str,
+    methods_text: str,
+    results_text: str,
+    config: AIConfig
+) -> Dict[str, Any]:
+    """
+    Standalone Pass 2: Methods Extraction.
+    
+    Call this AFTER all Pass 1 scoring is complete to maximize prompt caching.
+    Returns the comp_methods object to be merged into the main record.
+    """
+    if not methods_text.strip() and not results_text.strip():
+        logger.warning(f"PMID {pmid} [Pass 2] No methods/results text provided.")
+        return {}
+    
+    from litintel.enrich.prompt_templates import _TIER1_PCA_METHODS_INSTRUCTION
+    methods_system_prompt = _TIER1_PCA_METHODS_INSTRUCTION
+    methods_model = getattr(config, 'pass2_model', config.model_escalate)
+    
+    # Construct Methods-Specific User Prompt
+    methods_user_prompt = f"PMID: {pmid}\nAnalyze these sections for computational methods:\n\n"
+    methods_user_prompt += f"=== METHODS ===\n{methods_text}\n\n"
+    methods_user_prompt += f"=== RESULTS ===\n{results_text}\n"
+    
+    try:
+        client = _get_openai_client()
+        logger.info(f"PMID {pmid} [Pass 2] Methods extraction with {methods_model}...")
+        
+        methods_json, m_usage = _call_openai(client, methods_model, methods_system_prompt, methods_user_prompt, {})
+        
+        cached_pct = 0.0
+        if m_usage.get("input", 0) > 0:
+            cached_pct = (m_usage.get("cached", 0) / m_usage.get("input")) * 100
+        logger.info(f"PMID {pmid} [Pass 2] Usage: In={m_usage.get('input')} (Cached {m_usage.get('cached')} / {cached_pct:.1f}%), Out={m_usage.get('output')}")
+        
+        # Return just the comp_methods portion
+        if "comp_methods" in methods_json:
+            return {"comp_methods": methods_json["comp_methods"]}
+        else:
+            logger.warning(f"PMID {pmid} [Pass 2] returned no 'comp_methods' key.")
+            return {}
+            
+    except Exception as e:
+        logger.error(f"PMID {pmid} [Pass 2] Failed: {e}")
+        return {"comp_methods_error": str(e)}

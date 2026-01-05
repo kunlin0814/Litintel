@@ -218,6 +218,31 @@ def run_tier1_pipeline(config: AppConfig):
         full_rec = {**rec, **enrichment}
         enriched_records.append(full_rec)
 
+    # 4b. PHASE 2: BATCHED METHODS EXTRACTION (Cache Optimized)
+    # Run all Pass 2 calls together to maximize prompt caching efficiency.
+    pass2_eligible = [r for r in enriched_records if r.get("_pass2_eligible")]
+    
+    if pass2_eligible:
+        logger.info(f"Pass 2 Batch: Extracting methods for {len(pass2_eligible)} high-scoring papers...")
+        from litintel.enrich.ai_client import enrich_pass2_methods
+        
+        for rec in pass2_eligible:
+            pmid = rec.get("PMID")
+            methods_result = enrich_pass2_methods(
+                pmid=pmid,
+                methods_text=rec.get("PMC_Methods", ""),
+                results_text=rec.get("PMC_Results", ""),
+                config=config.ai
+            )
+            # Merge comp_methods into the record
+            rec.update(methods_result)
+            # Clean up internal marker
+            rec.pop("_pass2_eligible", None)
+    
+    # Clean up markers for non-eligible records too
+    for rec in enriched_records:
+        rec.pop("_pass2_eligible", None)
+
     # 5. Output
     valid_records = [r for r in enriched_records if r.get("PipelineConfidence") != "Error"]
     
