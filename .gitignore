@@ -32,3 +32,5 @@ papers_tier1_validated.md
 ai_input_*.txt
 gpt*.json
 scripts/debug_*.py
+scripts/test_*.py
+scripts/generate_*.py
