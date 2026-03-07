@@ -1,2 +1,0 @@
-[console_scripts]
-litintel = litintel.cli:app

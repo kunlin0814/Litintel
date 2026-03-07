@@ -34,3 +34,6 @@ gpt*.json
 scripts/debug_*.py
 scripts/test_*.py
 scripts/generate_*.py
+
+# Egg-info build artifacts
+*.egg-info/
