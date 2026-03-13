@@ -16,7 +16,7 @@ from litintel.utils.run_log import append_run_log
 
 logger = logging.getLogger(__name__)
 
-def run_tier1_pipeline(config: AppConfig):
+def run_tier1_pipeline(config: AppConfig, limit: int = None):
     logger.info(f"Starting Tier 1 Pipeline: {config.pipeline_name}")
     
     logger.info("Starting Disease-Specific Pipeline...")
@@ -38,7 +38,7 @@ def run_tier1_pipeline(config: AppConfig):
     
     SEARCH_BATCH_SIZE = 200  
     MAX_PAGES = 5            # Fetch up to 1000 papers per query
-    target_count = config.discovery.retmax
+    target_count = limit if limit else config.discovery.retmax
     
     for query in config.discovery.queries:
         # Check if we already have enough papers from previous queries

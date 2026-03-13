@@ -30,10 +30,10 @@ logger = logging.getLogger("litintel")
 app = typer.Typer(help="Literature Intelligence CLI")
 
 @app.command()
-def tier1(config: str = "configs/tier1_pca.yaml"):
+def tier1(config: str = "configs/tier1_pca.yaml", limit: int = None):
     """Run Tier-1 (PCa) Pipeline"""
     cfg = load_config_from_yaml(config)
-    run_tier1_pipeline(cfg)
+    run_tier1_pipeline(cfg, limit=limit)
 
 @app.command()
 def tier2(config: str = "configs/tier2_methods.yaml"):

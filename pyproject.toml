@@ -15,6 +15,7 @@ classifiers = [
 dependencies = [
     "prefect>=2.0.0",
     "google-generativeai",
+    "google-genai",
     "openai",
     "notion-client",
     "google-api-python-client",

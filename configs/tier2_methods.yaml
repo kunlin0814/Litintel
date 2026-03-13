@@ -27,9 +27,9 @@ discovery:
   reldays: 365
 
 ai:
-  provider: openai
-  model_default: "gpt-5-nano"
-  model_escalate: "gpt-5-mini"
+  provider: gemini
+  model_default: "gemini-3.1-flash-lite-preview"
+  model_escalate: "gemini-3.1-flash-lite-preview"
   max_chars: 80000
   prompt_template: "tier2_methods"
 

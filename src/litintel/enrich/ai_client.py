@@ -6,7 +6,10 @@ import logging
 from typing import Dict, Any, Tuple, Optional, List
 from pydantic import ValidationError
 
-import google.generativeai as genai
+import google.generativeai as genai_legacy # Keep legacy if needed
+from google import genai
+from google.genai import types
+
 try:
     from openai import OpenAI
 except ImportError:
@@ -45,6 +48,7 @@ def _extract_json(raw: str) -> Dict[str, Any]:
 
 # Global Clients (OpenAI client can be cached; Gemini model cannot due to varying config)
 _OPENAI_CLIENT = None
+_GEMINI_CLIENT = None
 _GEMINI_CONFIGURED = False
 
 def _get_openai_client():
@@ -55,20 +59,28 @@ def _get_openai_client():
         _OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     return _OPENAI_CLIENT
 
+def _get_gemini_client():
+    global _GEMINI_CLIENT
+    if not _GEMINI_CLIENT:
+        if not os.environ.get("GOOGLE_API_KEY"):
+            raise ValueError("GOOGLE_API_KEY not set")
+        _GEMINI_CLIENT = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    return _GEMINI_CLIENT
+
 def _configure_gemini():
-    """Configure Gemini API once. Raises if API key is missing."""
+    """Legacy configure Gemini API once. Raises if API key is missing."""
     global _GEMINI_CONFIGURED
     if not _GEMINI_CONFIGURED:
         api_key = os.environ.get("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY not set")
-        genai.configure(api_key=api_key)
+        genai_legacy.configure(api_key=api_key)
         _GEMINI_CONFIGURED = True
 
 def _get_gemini_model(system_instruction: str, response_schema: Dict[str, Any]):
-    """Create a fresh Gemini model per call (system_instruction & schema vary by tier)."""
+    """Create a fresh Gemini model per call (system_instruction & schema vary by tier) - Legacy."""
     _configure_gemini()
-    return genai.GenerativeModel(
+    return genai_legacy.GenerativeModel(
         model_name="gemini-2.5-flash",
         system_instruction=system_instruction,
         generation_config={
@@ -77,6 +89,64 @@ def _get_gemini_model(system_instruction: str, response_schema: Dict[str, Any]):
             "response_schema": response_schema,
         },
     )
+
+def _call_gemini(
+    client: genai.Client,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    schema: Dict[str, Any]
+) -> Tuple[Dict[str, Any], Dict[str, int]]:
+    
+    # We pass the JSON schema to the Gemini API
+    # Note: If pydantic schema is passed, genai supports it directly, but here we assume Dict
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=0.1,
+        response_mime_type="application/json",
+    )
+    # We do not have structured outputs strict guarantee for complex dicts like OpenAI json_schema,
+    # but application/json usually works well enough if the schema is printed in the prompt, or if we pass response_schema.
+    # Note: google-genai supports response_schema
+    if schema:
+       config.response_schema = schema
+
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=user_prompt,
+            config=config
+        )
+        raw_json = response.text
+        
+        usage = {
+            "input": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+            "output": response.usage_metadata.candidates_token_count if response.usage_metadata else 0,
+            "cached": response.usage_metadata.cached_content_token_count if getattr(response.usage_metadata, 'cached_content_token_count', None) else 0
+        }
+        
+        logger.debug(f"Gemini raw response ({model}): {raw_json[:500] if raw_json else ''}...")
+        return _extract_json(raw_json), usage
+        
+    except Exception as e:
+        # Simple Rate Limit Retry Logic
+        if "429" in str(e) or "quota" in str(e).lower() or "rate limit" in str(e).lower():
+            logger.warning(f"Gemini 429 Rate Limit. Retrying {model}...")
+            time.sleep(2)
+            response = client.models.generate_content(
+                model=model,
+                contents=user_prompt,
+                config=config
+            )
+            raw_json = response.text
+            usage = {
+                "input": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+                "output": response.usage_metadata.candidates_token_count if response.usage_metadata else 0,
+                "cached": 0 
+            }
+            logger.debug(f"Gemini raw response after retry ({model}): {raw_json[:500] if raw_json else ''}...")
+            return _extract_json(raw_json), usage
+        raise e
 
 def _call_openai(
     client: OpenAI, 
@@ -482,9 +552,27 @@ def enrich_record(
                     result_json, _ = _call_openai(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
                 else:
                     raise e
+        elif provider == AIProvider.GEMINI:
+            client = _get_gemini_client()
+            logger.info(f"PMID {pmid} [Pass 1] Scoring with Gemini {model_to_use} (FullText={has_full_text})...")
+            try:
+                result_json, usage = _call_gemini(client, model_to_use, final_system_prompt, user_prompt, json_schema)
+                
+                # Log usage
+                cached_pct = 0.0
+                if usage.get("input", 0) > 0:
+                    cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
+                logger.info(f"PMID {pmid} [Pass 1] Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
+                
+            except Exception as e:
+                logger.error(f"PMID {pmid} [Pass 1] Failed with Gemini: {e}")
+                if not use_two_pass and config.escalation_triggers and config.escalation_triggers.retry_on_error:
+                    logger.warning(f"Retrying with escalation model {config.model_escalate}...")
+                    result_json, _ = _call_gemini(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                else:
+                    raise e
         else:
-            # Gemini logic (placeholder)
-            raise NotImplementedError("Two-pass refactor currently validates OpenAI only.")
+            raise ValueError(f"Unknown provider: {provider}")
 
         # Normalize Keys & Coerce Score (Crucial for Pass 2 decision)
         result_json = _normalize_keys(result_json)
@@ -593,10 +681,18 @@ def enrich_pass2_methods(
     methods_user_prompt += f"=== RESULTS ===\n{results_text}\n"
     
     try:
-        client = _get_openai_client()
-        logger.info(f"PMID {pmid} [Pass 2] Methods extraction with {methods_model}...")
+        provider = config.provider
         
-        methods_json, m_usage = _call_openai(client, methods_model, methods_system_prompt, methods_user_prompt, {})
+        if provider == AIProvider.OPENAI:
+            client = _get_openai_client()
+            logger.info(f"PMID {pmid} [Pass 2] Methods extraction with {methods_model}...")
+            methods_json, m_usage = _call_openai(client, methods_model, methods_system_prompt, methods_user_prompt, {})
+        elif provider == AIProvider.GEMINI:
+            client = _get_gemini_client()
+            logger.info(f"PMID {pmid} [Pass 2] Methods extraction with Gemini {methods_model}...")
+            methods_json, m_usage = _call_gemini(client, methods_model, methods_system_prompt, methods_user_prompt, {})
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
         
         cached_pct = 0.0
         if m_usage.get("input", 0) > 0:
