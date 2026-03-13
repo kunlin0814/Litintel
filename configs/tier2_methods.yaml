@@ -28,8 +28,8 @@ discovery:
 
 ai:
   provider: gemini
-  model_default: "gemini-3.1-flash-lite-preview"
-  model_escalate: "gemini-3.1-flash-lite-preview"
+  model_default: "gemini-3-flash-preview"
+  model_escalate: "gemini-3-flash-preview"
   max_chars: 80000
   prompt_template: "tier2_methods"
 
