@@ -81,7 +81,7 @@ src/litintel/
 ├── pubmed/
 │   └── client.py       # NCBI E-Utilities integration
 ├── enrich/
-│   ├── ai_client.py    # OpenAI/Gemini with Two-Pass & Shadow Judge
+│   ├── ai_client.py    # Dual-provider (Gemini SDK default / OpenAI fallback) With Two-Pass & Shadow Judge
 │   ├── schema.py       # Pydantic models (Tier1Record, CompMethods)
 │   ├── prompt_templates.py # System prompts (Scoring + Methods)
 │   └── escalation_heuristics.py # H1-H4 heuristic checks
@@ -99,8 +99,8 @@ src/litintel/
 The pipeline uses a cache-optimized two-pass system:
 
 ### Pass 1: Scoring & Metadata
-- **Abstract-only papers** → `gpt-5-nano` (processed first to maximize cache hits)
-- **Full-text papers** → `gpt-5-mini` (processed second, grouped together)
+- **Abstract-only papers** → `gemini-3-flash-preview` (processed first to maximize cache hits)
+- **Full-text papers** → `gemini-3.1-pro-preview` (processed second, grouped together)
 
 ### Pass 2: Methods Extraction (Batched)
 - Triggers only for papers with **Score ≥ 88** and full-text availability
@@ -110,9 +110,9 @@ The pipeline uses a cache-optimized two-pass system:
 **Config (`configs/tier1_pca.yaml`):**
 ```yaml
 ai:
-  pass1_model_fulltext: "gpt-5-mini"  # Pass 1 if Full Text
-  pass1_model_abstract: "gpt-5-nano"  # Pass 1 if Abstract Only
-  pass2_model: "gpt-5-mini"           # Pass 2 (Methods)
+  pass1_model_fulltext: "gemini-3.1-pro-preview"  # Pass 1 if Full Text
+  pass1_model_abstract: "gemini-3-flash-preview"  # Pass 1 if Abstract Only
+  pass2_model: "gemini-3.1-pro-preview"           # Pass 2 (Methods)
   pass2_min_score: 88                 # Trigger threshold for Pass 2
 ```
 

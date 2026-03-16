@@ -10,10 +10,10 @@ LitIntel is a modular, tiered literature pipeline. Configuration is YAML-driven,
 
 ### Core Principles
 
-1.  **Memory, Not Search**: The pipeline doesn't just find papers—it remembers them. Notion stores structured insights, Drive stores machine-readable JSONL.
-2.  **Provenance**: Every record knows where its data came from (`AI_EvidenceLevel`, `FullTextUsed`, `PipelineConfidence`).
-3.  **Dual-Confidence Accessions**: GEO/SRA IDs are extracted via regex (`_Candidates`), then validated by AI (`_Validated`).
-4.  **Cost-Aware AI**: Two-Pass Architecture with cache-optimized processing order.
+1. **Memory, Not Search**: The pipeline doesn't just find papers—it remembers them. Notion stores structured insights, Drive stores machine-readable JSONL.
+2. **Provenance**: Every record knows where its data came from (`AI_EvidenceLevel`, `FullTextUsed`, `PipelineConfidence`).
+3. **Dual-Confidence Accessions**: GEO/SRA IDs are extracted via regex (`_Candidates`), then validated by AI (`_Validated`).
+4. **Cost-Aware AI**: Two-Pass Architecture with cache-optimized processing order.
 
 ---
 
@@ -35,11 +35,11 @@ discovery:
   reldays: 180
 
 ai:
-  provider: openai
+  provider: gemini
   # Two-Pass Architecture
-  pass1_model_fulltext: "gpt-5-mini"  # Pass 1 (Scoring) if Full Text
-  pass1_model_abstract: "gpt-5-nano"  # Pass 1 (Scoring) if Abstract Only
-  pass2_model: "gpt-5-mini"           # Pass 2 (Methods extraction)
+  pass1_model_fulltext: "gemini-3.1-pro-preview"  # Pass 1 (Scoring) if Full Text
+  pass1_model_abstract: "gemini-3-flash-preview"  # Pass 1 (Scoring) if Abstract Only
+  pass2_model: "gemini-3.1-pro-preview"           # Pass 2 (Methods extraction)
   pass2_min_score: 88                 # Trigger threshold for Pass 2
 
   max_chars: 80000
@@ -95,10 +95,10 @@ graph TD
 
 ### Cache-Optimized Processing Order
 
-To maximize OpenAI prompt caching (~50% cost reduction):
+To maximize Gemini prompt caching (~50% cost reduction):
 
-1. **Abstract-only papers** processed first with `gpt-5-nano`
-2. **Full-text papers** processed second with `gpt-5-mini`
+1. **Abstract-only papers** processed first with `gemini-3-flash-preview`
+2. **Full-text papers** processed second with `gemini-3.1-pro-preview`
 3. **Pass 2** runs in parallel batch after all Pass 1 completes
 
 ---
@@ -136,7 +136,6 @@ To maximize OpenAI prompt caching (~50% cost reduction):
 | **Medium-Ambiguous** | Abstract-only + Heuristic escalation was triggered |
 | **Low** | Abstract-only + Score < 85, OR Full-text + Score < 70 |
 | **Error** | Processing failed |
-
 
 ### Tier1Record (extends BaseRecord)
 
@@ -185,13 +184,15 @@ class AnalysisStep(BaseModel):
 ### Two-Pass Architecture
 
 **Pass 1: Scoring & Metadata** (`enrich_record()`)
+
 - Model selection based on `has_full_text`:
-  - Abstract-only → `pass1_model_abstract` (default: `gpt-5-nano`)
-  - Full-text → `pass1_model_fulltext` (default: `gpt-5-mini`)
+  - Abstract-only → `pass1_model_abstract` (default: `gemini-3-flash-preview`)
+  - Full-text → `pass1_model_fulltext` (default: `gemini-3.1-pro-preview`)
 - Returns all metadata fields + `RelevanceScore`
 - Marks papers eligible for Pass 2 via `_pass2_eligible` flag
 
 **Pass 2: Methods Extraction** (`enrich_pass2_methods()`)
+
 - Triggered if `RelevanceScore >= pass2_min_score` (default: 88)
 - Uses dedicated `_TIER1_PCA_METHODS_INSTRUCTION` prompt
 - Runs in parallel batch (ThreadPoolExecutor, max 3 workers)
@@ -199,17 +200,17 @@ class AnalysisStep(BaseModel):
 
 ### Provider Abstraction
 
--   **OpenAI**: Uses `response_format: {"type": "json_object"}`. Model selection is automatic via config.
--   **Gemini**: Uses `response_mime_type: "application/json"` with a full Pydantic-derived schema.
+- **OpenAI**: Uses `response_format: {"type": "json_object"}`. Model selection is automatic via config.
+- **Gemini**: Uses `response_mime_type: "application/json"` with a full Pydantic-derived schema.
 
 ### Prompt Templates (`prompt_templates.py`)
 
--   `_TIER1_PCA_SCORING_INSTRUCTION`: PhD-level curator for prostate cancer spatial omics scoring.
--   `_TIER1_PCA_METHODS_INSTRUCTION`: Methods-focused extraction prompt.
--   `TIER2_SYSTEM_PROMPT`: Methods Discovery tier.
--   Controlled vocabulary for `DataTypes` (e.g., `scRNA-seq`, `Visium`, `multiome`).
--   Instructions for `Group` extraction (Corresponding Author → Last Author → Fallback).
--   GEO/SRA validation logic: "Include only if clearly from THIS study."
+- `_TIER1_PCA_SCORING_INSTRUCTION`: PhD-level curator for prostate cancer spatial omics scoring.
+- `_TIER1_PCA_METHODS_INSTRUCTION`: Methods-focused extraction prompt.
+- `TIER2_SYSTEM_PROMPT`: Methods Discovery tier.
+- Controlled vocabulary for `DataTypes` (e.g., `scRNA-seq`, `Visium`, `multiome`).
+- Instructions for `Group` extraction (Corresponding Author → Last Author → Fallback).
+- GEO/SRA validation logic: "Include only if clearly from THIS study."
 
 ---
 
@@ -217,18 +218,18 @@ class AnalysisStep(BaseModel):
 
 ### Notion (`notion.py`)
 
--   **Upsert**: Creates pages for new papers, can update existing.
--   **Dedup Index**: Builds `PMID → page_id` map to skip already-ingested papers.
--   **Field Mapping**: `_build_tier1_properties()` maps Pydantic fields to Notion property types.
--   **Truncation**: All text fields capped at 2000 chars for API compliance.
+- **Upsert**: Creates pages for new papers, can update existing.
+- **Dedup Index**: Builds `PMID → page_id` map to skip already-ingested papers.
+- **Field Mapping**: `_build_tier1_properties()` maps Pydantic fields to Notion property types.
+- **Truncation**: All text fields capped at 2000 chars for API compliance.
 
 ### Google Drive (`drive.py`)
 
--   **JSONL**: `papers.jsonl` in root folder (machine-readable log).
--   **Markdown Buckets** (in `NotebookLM_Corpus/`):
-    -   `Literature_{Year}_Q{Q}.md`: Score ≥ 87 + Full-text papers.
-    -   `HighConfidence_Analysis.md`: Score ≥ 90 + Full-text papers.
-    -   `CompMethods_{Year}_Q{Q}.md`: Score ≥ 85 + Full-text papers with methods.
+- **JSONL**: `papers.jsonl` in root folder (machine-readable log).
+- **Markdown Buckets** (in `NotebookLM_Corpus/`):
+  - `Literature_{Year}_Q{Q}.md`: Score ≥ 87 + Full-text papers.
+  - `HighConfidence_Analysis.md`: Score ≥ 90 + Full-text papers.
+  - `CompMethods_{Year}_Q{Q}.md`: Score ≥ 85 + Full-text papers with methods.
 
 ---
 
@@ -242,9 +243,9 @@ A Prefect `@flow` that wraps `run_tier1_pipeline`. Loads config from `configs/ti
 
 Registers the flow with Prefect Cloud:
 
--   **Schedule**: Biweekly (RRule).
--   **Source**: Git-based (clones from GitHub at runtime).
--   **Work Pool**: `literature-managed-pool` (Prefect Managed / Serverless).
+- **Schedule**: Biweekly (RRule).
+- **Source**: Git-based (clones from GitHub at runtime).
+- **Work Pool**: `literature-managed-pool` (Prefect Managed / Serverless).
 
 ---
 
@@ -255,7 +256,7 @@ Registers the flow with Prefect Cloud:
 | `ImportError: load_config_from_yaml` | Old code version | Pull latest from GitHub. |
 | `API 429 (Rate Limit)` | Too many requests | Automatic retry with 2s delay. |
 | `NOTION_DB_ID not set` | Missing env var | Check `.env` and `load_dotenv()`. |
-| `OPENAI_API_KEY not set` | Missing API key | Ensure `.env` contains valid key. |
+| `GOOGLE_API_KEY not set` | Missing API key | Ensure `.env` contains valid key. |
 | `MissingFlowError` in Prefect | Old repo referenced | Ensure `deploy_scheduled.py` points to correct GitHub URL. |
 
 ---
@@ -265,13 +266,14 @@ Registers the flow with Prefect Cloud:
 | Service | Usage | Cost (Monthly) |
 |---------|-------|----------------|
 | NCBI | ~400 requests/run | Free |
-| OpenAI (Nano) | Abstract-only papers | ~$0.005/paper |
-| OpenAI (Mini) | Full-text papers | ~$0.02/paper |
-| OpenAI (Pass 2) | High-scoring papers | ~$0.03/paper |
+| Google Gemini (Flash) | Abstract-only papers | Covered by $10 Monthly Credit |
+| Google Gemini (Pro) | Full-text papers | Covered by $10 Monthly Credit |
+| Google Gemini (Pass 2) | High-scoring papers | Covered by $10 Monthly Credit |
 | Notion | ~50 writes/run | Free |
 | Prefect Cloud | 2 runs/month | Free |
 
 **Cost Optimization Features:**
+
 - Prompt caching reduces input token costs by ~50%
 - Two-Pass skips expensive methods extraction for low-scoring papers
 - Abstract-only papers use cheaper Nano model
