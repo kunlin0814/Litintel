@@ -100,10 +100,17 @@ def _call_gemini(
     
     # We pass the JSON schema to the Gemini API
     # Note: If pydantic schema is passed, genai supports it directly, but here we assume Dict
+    # Thinking level: pro models are already strong reasoners → LOW;
+    # flash models benefit more from chain-of-thought → MEDIUM
+    thinking_level = "LOW" if "pro" in model.lower() else "MEDIUM"
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
         temperature=0.1,
         response_mime_type="application/json",
+        thinking_config=types.ThinkingConfig(
+            include_thoughts=True,
+            thinking_level=thinking_level,
+        ),
     )
     # We do not have structured outputs strict guarantee for complex dicts like OpenAI json_schema,
     # but application/json usually works well enough if the schema is printed in the prompt, or if we pass response_schema.
@@ -122,10 +129,11 @@ def _call_gemini(
         usage = {
             "input": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
             "output": response.usage_metadata.candidates_token_count if response.usage_metadata else 0,
-            "cached": response.usage_metadata.cached_content_token_count if getattr(response.usage_metadata, 'cached_content_token_count', None) else 0
+            "cached": response.usage_metadata.cached_content_token_count if getattr(response.usage_metadata, 'cached_content_token_count', None) else 0,
+            "thinking": getattr(response.usage_metadata, 'thoughts_token_count', 0) or 0
         }
         
-        logger.debug(f"Gemini raw response ({model}): {raw_json[:500] if raw_json else ''}...")
+        logger.debug(f"Gemini raw response ({model}, thinking={thinking_level}): {raw_json[:500] if raw_json else ''}...")
         return _extract_json(raw_json), usage
         
     except Exception as e:
@@ -542,7 +550,7 @@ def enrich_record(
                 cached_pct = 0.0
                 if usage.get("input", 0) > 0:
                     cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
-                logger.info(f"PMID {pmid} [Pass 1] Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
+                logger.info(f"PMID {pmid} [Pass 1] Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}, Thinking={usage.get('thinking', 0)}")
                 
             except Exception as e:
                 # Simple retry with escalation model if in legacy single-pass mode
@@ -562,7 +570,7 @@ def enrich_record(
                 cached_pct = 0.0
                 if usage.get("input", 0) > 0:
                     cached_pct = (usage.get("cached", 0) / usage.get("input")) * 100
-                logger.info(f"PMID {pmid} [Pass 1] Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}")
+                logger.info(f"PMID {pmid} [Pass 1] Usage: In={usage.get('input')} (Cached {usage.get('cached')} / {cached_pct:.1f}%), Out={usage.get('output')}, Thinking={usage.get('thinking', 0)}")
                 
             except Exception as e:
                 logger.error(f"PMID {pmid} [Pass 1] Failed with Gemini: {e}")
@@ -697,7 +705,7 @@ def enrich_pass2_methods(
         cached_pct = 0.0
         if m_usage.get("input", 0) > 0:
             cached_pct = (m_usage.get("cached", 0) / m_usage.get("input")) * 100
-        logger.info(f"PMID {pmid} [Pass 2] Usage: In={m_usage.get('input')} (Cached {m_usage.get('cached')} / {cached_pct:.1f}%), Out={m_usage.get('output')}")
+        logger.info(f"PMID {pmid} [Pass 2] Usage: In={m_usage.get('input')} (Cached {m_usage.get('cached')} / {cached_pct:.1f}%), Out={m_usage.get('output')}, Thinking={m_usage.get('thinking', 0)}")
         
         # Return just the comp_methods portion
         if "comp_methods" in methods_json:
