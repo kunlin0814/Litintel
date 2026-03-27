@@ -46,10 +46,10 @@ def validate(config: str):
     """Validate a configuration file"""
     try:
         cfg = load_config_from_yaml(config)
-        logger.info(f"✅ Config '{config}' is valid.")
+        logger.info(f"Config '{config}' is valid.")
         logger.info(f"Pipeline: {cfg.pipeline_name} (Tier {cfg.pipeline_tier})")
     except Exception:
-        logger.exception(f"❌ Config '{config}' is invalid.")
+        logger.exception(f"Config '{config}' is invalid.")
 
 if __name__ == "__main__":
     app()

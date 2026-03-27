@@ -126,7 +126,7 @@ def ensure_folder_exists(service, folder_name: str, parent_id: str) -> str:
 
 def append_text_to_file(service, folder_id: str, file_name: str, new_text: str) -> str:
     """
-    Append text to a markdown file in Drive (Download → Append → Upload).
+    Append text to a markdown file in Drive (Download -> Append -> Upload).
     
     Args:
         service: Drive service
@@ -289,7 +289,7 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
     """
     lines = []
     lines.append("---")
-    lines.append(f"## PMID: {rec.get('PMID')} — {rec.get('Journal', 'Unknown')} ({rec.get('Year', 'N/A')})")
+    lines.append(f"## PMID: {rec.get('PMID')} -- {rec.get('Journal', 'Unknown')} ({rec.get('Year', 'N/A')})")
     lines.append(f"**Title**: {normalize_text(rec.get('Title', 'Untitled'))}")
     lines.append(f"**Authors**: {normalize_text(rec.get('Authors', ''))}")
     lines.append(f"**Published**: {rec.get('PubDate', rec.get('Year', 'N/A'))}")
@@ -521,7 +521,7 @@ def update_methods_index(
     
     # Build index content
     lines = []
-    lines.append(f"# Computational Methods Index — {year} Q{quarter}")
+    lines.append(f"# Computational Methods Index -- {year} Q{quarter}")
     lines.append("")
     lines.append(f"*Last updated: {current_date.strftime('%Y-%m-%d %H:%M')}*")
     lines.append("")
@@ -633,7 +633,7 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
         except Exception as e:
             logger.error(f"Failed to append to {high_conf_filename}: {e}")
     
-    # 3. Computational Methods (full-text papers with score >= 85 only → quarterly append file)
+    # 3. Computational Methods (full-text papers with score >= 85 only -> quarterly append file)
     fulltext_records = [
         r for r in records 
         if r.get("FullTextUsed") and r.get("comp_methods") and r.get("RelevanceScore", 0) >= 85

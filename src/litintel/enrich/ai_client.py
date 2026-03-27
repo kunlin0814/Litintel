@@ -95,14 +95,13 @@ def _call_gemini(
     model: str,
     system_prompt: str,
     user_prompt: str,
-    schema: Dict[str, Any]
+    schema: Dict[str, Any],
+    thinking_level: str = "MEDIUM"
 ) -> Tuple[Dict[str, Any], Dict[str, int]]:
     
     # We pass the JSON schema to the Gemini API
     # Note: If pydantic schema is passed, genai supports it directly, but here we assume Dict
-    # Thinking level: pro models are already strong reasoners → LOW;
-    # flash models benefit more from chain-of-thought → MEDIUM
-    thinking_level = "LOW" if "pro" in model.lower() else "MEDIUM"
+    # Thinking level is now explicitly passed per model via YAML config
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
         temperature=0.1,
@@ -562,9 +561,17 @@ def enrich_record(
                     raise e
         elif provider == AIProvider.GEMINI:
             client = _get_gemini_client()
-            logger.info(f"PMID {pmid} [Pass 1] Scoring with Gemini {model_to_use} (FullText={has_full_text})...")
+            # Resolve thinking level from config
+            if use_two_pass:
+                if has_full_text:
+                    pass1_thinking = getattr(config, 'pass1_thinking_fulltext', None) or 'MEDIUM'
+                else:
+                    pass1_thinking = getattr(config, 'pass1_thinking_abstract', None) or 'MEDIUM'
+            else:
+                pass1_thinking = 'MEDIUM'
+            logger.info(f"PMID {pmid} [Pass 1] Scoring with Gemini {model_to_use} (FullText={has_full_text}, Thinking={pass1_thinking})...")
             try:
-                result_json, usage = _call_gemini(client, model_to_use, final_system_prompt, user_prompt, json_schema)
+                result_json, usage = _call_gemini(client, model_to_use, final_system_prompt, user_prompt, json_schema, thinking_level=pass1_thinking)
                 
                 # Log usage
                 cached_pct = 0.0
@@ -576,7 +583,7 @@ def enrich_record(
                 logger.error(f"PMID {pmid} [Pass 1] Failed with Gemini: {e}")
                 if not use_two_pass and config.escalation_triggers and config.escalation_triggers.retry_on_error:
                     logger.warning(f"Retrying with escalation model {config.model_escalate}...")
-                    result_json, _ = _call_gemini(client, config.model_escalate, final_system_prompt, user_prompt, json_schema)
+                    result_json, _ = _call_gemini(client, config.model_escalate, final_system_prompt, user_prompt, json_schema, thinking_level=pass1_thinking)
                 else:
                     raise e
         else:
@@ -603,7 +610,7 @@ def enrich_record(
 
         # Note: Shadow Judge / Heuristic escalation logic removed.
         # With Two-Pass Architecture, full-text papers already use gpt-5-mini directly,
-        # making the Nano→Mini escalation validation unnecessary.
+        # making the Nano->Mini escalation validation unnecessary.
         result_json["EscalationTriggered"] = False
 
         # Calculate PipelineConfidence based on evidence and processing
@@ -697,8 +704,9 @@ def enrich_pass2_methods(
             methods_json, m_usage = _call_openai(client, methods_model, methods_system_prompt, methods_user_prompt, {})
         elif provider == AIProvider.GEMINI:
             client = _get_gemini_client()
-            logger.info(f"PMID {pmid} [Pass 2] Methods extraction with Gemini {methods_model}...")
-            methods_json, m_usage = _call_gemini(client, methods_model, methods_system_prompt, methods_user_prompt, {})
+            pass2_thinking = getattr(config, 'pass2_thinking', None) or 'LOW'
+            logger.info(f"PMID {pmid} [Pass 2] Methods extraction with Gemini {methods_model} (Thinking={pass2_thinking})...")
+            methods_json, m_usage = _call_gemini(client, methods_model, methods_system_prompt, methods_user_prompt, {}, thinking_level=pass2_thinking)
         else:
             raise ValueError(f"Unknown provider: {provider}")
         

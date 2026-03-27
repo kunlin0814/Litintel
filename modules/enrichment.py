@@ -431,7 +431,7 @@ def ai_enrich_records(
         )
         
         # Token tracking with cache awareness
-        # System message (~2000-3000 tokens) is cached after first call → 50% discount
+        # System message (~2000-3000 tokens) is cached after first call -> 50% discount
         # Dynamically estimate based on loaded instruction
         SYSTEM_TOKEN_ESTIMATE = len(system_instruction) // 4
         user_tokens = len(user_prompt) // 4

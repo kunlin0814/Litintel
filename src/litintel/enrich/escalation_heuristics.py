@@ -34,7 +34,7 @@ def should_escalate(
 ) -> Tuple[bool, List[str]]:
     """
     Returns (should_escalate, triggered_rules) based on deterministic heuristics.
-    Does NOT trust Nano's value judgments—only structural signals.
+    Does NOT trust Nano's value judgments--only structural signals.
     
     Supports both dict config and typed EscalationTriggersConfig.
     """

@@ -25,7 +25,7 @@ def tier1_literature_flow():
     Configuration is loaded from 'configs/tier1_pca.yaml' in the repo.
     """
     logger = get_run_logger()
-    logger.info("🚀 Starting Tier 1 Pipeline Deployment")
+    logger.info("[START] Starting Tier 1 Pipeline Deployment")
     
     # Path to config relative to repo root
     config_path = os.path.join(root_dir, "configs", "tier1_pca.yaml")
@@ -42,7 +42,7 @@ def tier1_literature_flow():
         
         run_tier1_pipeline(config)
         
-        logger.info("✅ Pipeline execution completed")
+        logger.info("[OK] Pipeline execution completed")
         
     except Exception as e:
         logger.error(f"Pipeline Failed: {e}")

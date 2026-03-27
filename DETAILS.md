@@ -1,4 +1,4 @@
-# Literature Intelligence (LitIntel) – Technical Details
+# Literature Intelligence (LitIntel) - Technical Details
 
 **This document describes the internals**. For a quick overview, see `README.md`.
 
@@ -10,7 +10,7 @@ LitIntel is a modular, tiered literature pipeline. Configuration is YAML-driven,
 
 ### Core Principles
 
-1. **Memory, Not Search**: The pipeline doesn't just find papers—it remembers them. Notion stores structured insights, Drive stores machine-readable JSONL.
+1. **Memory, Not Search**: The pipeline doesn't just find papers--it remembers them. Notion stores structured insights, Drive stores machine-readable JSONL.
 2. **Provenance**: Every record knows where its data came from (`AI_EvidenceLevel`, `FullTextUsed`, `PipelineConfidence`).
 3. **Dual-Confidence Accessions**: GEO/SRA IDs are extracted via regex (`_Candidates`), then validated by AI (`_Validated`).
 4. **Cost-Aware AI**: Two-Pass Architecture with cache-optimized processing order.
@@ -131,8 +131,8 @@ To maximize Gemini prompt caching (~50% cost reduction):
 
 | Confidence | Criteria |
 |------------|----------|
-| **High** | Full-text evidence + Score ≥ 80 + No heuristic escalation triggered |
-| **Medium** | Full-text + Score ≥ 70, OR Abstract-only + Score ≥ 85 |
+| **High** | Full-text evidence + Score >= 80 + No heuristic escalation triggered |
+| **Medium** | Full-text + Score >= 70, OR Abstract-only + Score >= 85 |
 | **Medium-Ambiguous** | Abstract-only + Heuristic escalation was triggered |
 | **Low** | Abstract-only + Score < 85, OR Full-text + Score < 70 |
 | **Error** | Processing failed |
@@ -186,8 +186,8 @@ class AnalysisStep(BaseModel):
 **Pass 1: Scoring & Metadata** (`enrich_record()`)
 
 - Model selection based on `has_full_text`:
-  - Abstract-only → `pass1_model_abstract` (default: `gemini-3-flash-preview`)
-  - Full-text → `pass1_model_fulltext` (default: `gemini-3.1-pro-preview`)
+  - Abstract-only -> `pass1_model_abstract` (default: `gemini-3-flash-preview`)
+  - Full-text -> `pass1_model_fulltext` (default: `gemini-3.1-pro-preview`)
 - Returns all metadata fields + `RelevanceScore`
 - Marks papers eligible for Pass 2 via `_pass2_eligible` flag
 
@@ -209,7 +209,7 @@ class AnalysisStep(BaseModel):
 - `_TIER1_PCA_METHODS_INSTRUCTION`: Methods-focused extraction prompt.
 - `TIER2_SYSTEM_PROMPT`: Methods Discovery tier.
 - Controlled vocabulary for `DataTypes` (e.g., `scRNA-seq`, `Visium`, `multiome`).
-- Instructions for `Group` extraction (Corresponding Author → Last Author → Fallback).
+- Instructions for `Group` extraction (Corresponding Author -> Last Author -> Fallback).
 - GEO/SRA validation logic: "Include only if clearly from THIS study."
 
 ---
@@ -219,7 +219,7 @@ class AnalysisStep(BaseModel):
 ### Notion (`notion.py`)
 
 - **Upsert**: Creates pages for new papers, can update existing.
-- **Dedup Index**: Builds `PMID → page_id` map to skip already-ingested papers.
+- **Dedup Index**: Builds `PMID -> page_id` map to skip already-ingested papers.
 - **Field Mapping**: `_build_tier1_properties()` maps Pydantic fields to Notion property types.
 - **Truncation**: All text fields capped at 2000 chars for API compliance.
 
@@ -227,9 +227,9 @@ class AnalysisStep(BaseModel):
 
 - **JSONL**: `papers.jsonl` in root folder (machine-readable log).
 - **Markdown Buckets** (in `NotebookLM_Corpus/`):
-  - `Literature_{Year}_Q{Q}.md`: Score ≥ 87 + Full-text papers.
-  - `HighConfidence_Analysis.md`: Score ≥ 90 + Full-text papers.
-  - `CompMethods_{Year}_Q{Q}.md`: Score ≥ 85 + Full-text papers with methods.
+  - `Literature_{Year}_Q{Q}.md`: Score >= 87 + Full-text papers.
+  - `HighConfidence_Analysis.md`: Score >= 90 + Full-text papers.
+  - `CompMethods_{Year}_Q{Q}.md`: Score >= 85 + Full-text papers with methods.
 
 ---
 

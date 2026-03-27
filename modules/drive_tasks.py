@@ -103,7 +103,7 @@ def _format_markdown_entry(rec: Dict[str, Any]) -> str:
     lines = []
     # Separator
     lines.append("---") 
-    lines.append(f"## PMID: {rec.get('PMID')} — {rec.get('Journal', 'Unknown Journal')} ({rec.get('PubDate', 'N/A')})")
+    lines.append(f"## PMID: {rec.get('PMID')} -- {rec.get('Journal', 'Unknown Journal')} ({rec.get('PubDate', 'N/A')})")
     lines.append(f"**Title**: {rec.get('Title', 'Untitled')}")
     lines.append(f"**Group**: {rec.get('Group', '')}")
     lines.append(f"**RelevanceScore**: {rec.get('RelevanceScore')}")

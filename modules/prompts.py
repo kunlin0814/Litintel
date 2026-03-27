@@ -74,7 +74,7 @@ Score papers based on their relevance to PROSTATE CANCER + SPATIAL/SINGLE-CELL/M
   * Single-cell ATAC-seq (scATAC-seq, snATAC-seq)
   * Multiome (10x Multiome, joint RNA+ATAC)
   * Spatial transcriptomics (Visium, Xenium, CosMx, GeoMx, MERFISH, Slide-seq)
-- Non-prostate cancer with ≥3 relevant technologies
+- Non-prostate cancer with >=3 relevant technologies
 
 ### Tier 4: Highest Relevance (Score = 95-100)
 - Prostate cancer + BOTH:
@@ -199,7 +199,7 @@ STRICT OUTPUT CONSTRAINTS
 2. All string values must be properly escaped (no unescaped quotes or newlines)
 3. RelevanceScore MUST be an integer between 0 and 100
 4. ReuseScore MUST be an integer between 1 and 5
-5. Missing information → empty string (""), never null or "N/A"
+5. Missing information -> empty string (""), never null or "N/A"
 6. Do NOT fabricate information - only extract what is explicitly stated
 7. Keep output compact - no unnecessary whitespace in JSON
 8. All 12 fields are REQUIRED in the output

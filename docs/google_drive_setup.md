@@ -65,12 +65,12 @@ The pipeline applies different thresholds for different outputs:
 | Output | Threshold | Notes |
 |--------|-----------|-------|
 | `papers.jsonl` | All papers | Complete machine-readable log |
-| `Literature_{Year}_Q{Q}.md` | Score ≥ 87 + Full-text | High-quality papers with full evidence |
-| `HighConfidence_Analysis.md` | Score ≥ 90 + Full-text | "Must read" papers with full evidence |
-| `CompMethods_{Year}_Q{Q}.md` | Score ≥ 85 + Full-text | Methods from high-quality full-text papers |
+| `Literature_{Year}_Q{Q}.md` | Score >= 87 + Full-text | High-quality papers with full evidence |
+| `HighConfidence_Analysis.md` | Score >= 90 + Full-text | "Must read" papers with full evidence |
+| `CompMethods_{Year}_Q{Q}.md` | Score >= 85 + Full-text | Methods from high-quality full-text papers |
 
 > [!NOTE]
-> - `Literature_Q.md` requires **both** Score ≥ 87 AND full-text to ensure high confidence.
+> - `Literature_Q.md` requires **both** Score >= 87 AND full-text to ensure high confidence.
 > - The `pass2_min_score: 88` threshold only controls **Pass 2 methods extraction**, not Drive filtering.
 
 

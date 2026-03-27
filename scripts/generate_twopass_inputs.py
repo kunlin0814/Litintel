@@ -100,7 +100,7 @@ def generate_twopass_inputs(pmid):
     else:
         logger.info("No methods/results sections - Pass 2 would be skipped")
     
-    print(f"\n✅ Generated input files for PMID {pmid}")
+    print(f"\n[OK] Generated input files for PMID {pmid}")
     print(f"   - ai_input_pass1_{pmid}.txt (Scoring)")
     print(f"   - ai_input_pass2_{pmid}.txt (Methods)")
 

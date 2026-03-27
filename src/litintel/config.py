@@ -49,8 +49,11 @@ class AIConfig(BaseModel):
     
     # Two-Pass Architecture Fields
     pass1_model_fulltext: Optional[str] = None
+    pass1_thinking_fulltext: Optional[str] = None
     pass1_model_abstract: Optional[str] = None
+    pass1_thinking_abstract: Optional[str] = None
     pass2_model: Optional[str] = None
+    pass2_thinking: Optional[str] = None
     pass2_min_score: int = 88
     
     max_chars: int = 80000

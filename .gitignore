@@ -37,3 +37,4 @@ scripts/generate_*.py
 
 # Egg-info build artifacts
 *.egg-info/
+.claude/settings.local.json

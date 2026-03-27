@@ -223,7 +223,7 @@ def literature_search_flow(
         update_res = {"updated": 0}
 
     logger.info(
-        f"Summary → total_found={count}, new_selected={num_new_candidates}, existing_updated={len(to_update_final)}, "
+        f"Summary -> total_found={count}, new_selected={num_new_candidates}, existing_updated={len(to_update_final)}, "
         f"created={create_res.get('created', 0)}, updated={update_res.get('updated', 0)}"
     )
     append_run_log(

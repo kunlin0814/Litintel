@@ -30,7 +30,7 @@ def pubmed_esearch(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "usehistory": "y",
         "tool": cfg.get("EUTILS_TOOL", "prefect-litsearch"),
     }
-    logger.info(f"ESearch → query: {cfg['QUERY_TERM']}")
+    logger.info(f"ESearch -> query: {cfg['QUERY_TERM']}")
     resp = session.get(base_url, params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json().get("esearchresult", {})

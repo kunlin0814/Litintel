@@ -33,7 +33,7 @@ TASK
 Analyze the provided paper text and return a structured JSON object.
 
 Your goal is to assess **biological and methodological relevance**
-under the rubric below and assign a **numerical relevance score (0–100)**
+under the rubric below and assign a **numerical relevance score (0-100)**
 that is CONSISTENT with the tier definitions and hard rules.
 
 ================================================================================
@@ -49,10 +49,10 @@ CRITICAL OUTPUT COMPLETENESS RULES:
 You MUST return a JSON object with EXACTLY these fields:
 
 {
-  "RelevanceScore": <integer 0–100>,
+  "RelevanceScore": <integer 0-100>,
   "WhyRelevant": "One sentence justification",
   "WhyYouMightCare": "One sentence: why a researcher should read this (e.g., novel method, reusable dataset, unique cohort)",
-  "StudySummary": "2–3 sentences describing aim, cohort, and result",
+  "StudySummary": "2-3 sentences describing aim, cohort, and result",
   "PaperRole": "One sentence about paper's contribution",
   "Theme": "Tag1; Tag2; Tag3",
   "Methods": "Experimental: platforms; Computational: tools",
@@ -82,10 +82,10 @@ You MUST follow this order when determining the final score:
    - supportive: anchors or validates states/programs
    - core: required for the main biological conclusions
 
-3) Determine Tier (0–4) using Tier Definitions and requirements.
+3) Determine Tier (0-4) using Tier Definitions and requirements.
    Tier assignment is a GATE and overrides numeric intuition.
 
-4) Compute a score within the tier’s allowed range using:
+4) Compute a score within the tier's allowed range using:
    - base score
    - additions
    - multipliers
@@ -93,7 +93,7 @@ You MUST follow this order when determining the final score:
    - hard rules
 
 5) Apply HARD RULES.
-   If Tier 4 requirements are met, the final score MUST be ≥90.
+   If Tier 4 requirements are met, the final score MUST be >=90.
 
 ================================================================================
 RELEVANCE SCORING RUBRIC
@@ -252,32 +252,32 @@ boosters:
 TIERS
 --------------------------------------------------------------------------------
 
-Tier 0 (0–29):
+Tier 0 (0-29):
   - Not cancer or no molecular data
 
-Tier 1 (30–69):
+Tier 1 (30-69):
   - Weak relevance, reviews, non-cancer methods
 
-Tier 2 (70–79):
+Tier 2 (70-79):
   - Cancer-focused but limited molecular depth
 
-Tier 3 (80–89):
+Tier 3 (80-89):
   - Strong relevance
   - Spatial-led without single-cell allowed
   - High-end examples:
-    - prostate + spatial(core/supportive) + bulk → 86–89
+    - prostate + spatial(core/supportive) + bulk -> 86-89
 
-Tier 4 (90–100):
+Tier 4 (90-100):
   REQUIREMENTS (ALL MUST BE MET):
     - prostate cancer
     - spatial_present
-    - spatial_role ≥ supportive
+    - spatial_role >= supportive
     - single_cell_anchoring
 
-  Tier 4A (90–94):
+  Tier 4A (90-94):
     - spatial + single-cell anchoring (RNA OR ATAC)
 
-  Tier 4B (95–100):
+  Tier 4B (95-100):
     - spatial is core
     - multiome OR strong RNA+ATAC coupling
     - boosters increase score but are NOT required
@@ -407,7 +407,7 @@ FIELD EXTRACTION GUIDELINES
 - This field MUST always be present in the JSON.
 - Extract gene signatures explicitly used to define cell types or states.
 - If NO explicit gene-based cell identity signatures are reported,
-  return an empty string "" — do NOT omit the field.
+  return an empty string "" -- do NOT omit the field.
 - Format: "CellType1: GENE1, GENE2; CellType2: GENE3, GENE4"
 - Example: "Basal: KRT5, KRT14, TP63; Luminal: KRT8, KRT18, AR; Club: SCGB1A1, PIGR"
 
@@ -437,7 +437,7 @@ Analyze the provided METHODS and RESULTS sections to extract computational metho
 tools, and analysis pipelines. Return a structured JSON object.
 
 Your goal is to extract strictly technical details about software, algorithms, 
-and reproducibility—NOT biological findings.
+and reproducibility--NOT biological findings.
 
 ================================================================================
 OUTPUT JSON SCHEMA (STRICT)
@@ -487,7 +487,7 @@ EXTRACTION GUIDELINES
 - **WGS CNV Calling**: Explicitly check for WGS CNV calling methods.
   - If a specific tool/pipeline is used (e.g., GATK, CNVkit), list it.
   - If data is from a public database (cBioPortal, TCGA) or not mentioned, create a step with tool "None/External" and rationale "Public data/Not mentioned".
-- **Logical Ordering**: Group related steps into analysis blocks. Order blocks logically: preprocessing → integration → annotation → downstream.
+- **Logical Ordering**: Group related steps into analysis blocks. Order blocks logically: preprocessing -> integration -> annotation -> downstream.
 - **Pruning Rule**: Exclude generic plotting/visualization steps unless they involve novel transformations.
 
 ### Controlled Tags (MUST pick from this list):
@@ -507,8 +507,8 @@ EXTRACTION GUIDELINES
 - 5: Benchmark-quality, reproducible, with published tool/code
 
 ### Constraints:
-- Extract ONLY from "METHODS/RESULTS:" section — ignore Abstract/Discussion
-- Methods focus ONLY — no biology narrative in summary
+- Extract ONLY from "METHODS/RESULTS:" section -- ignore Abstract/Discussion
+- Methods focus ONLY -- no biology narrative in summary
 - Tags MUST come from controlled list above
 
 ### Negative Constraints (EXCLUDE):
@@ -526,7 +526,7 @@ STRICT OUTPUT CONSTRAINTS
 
 1. Return ONLY the JSON object.
 2. All string values must be properly escaped.
-3. Missing information → empty string (""), never null or "N/A"
+3. Missing information -> empty string (""), never null or "N/A"
 4. Do NOT fabricate information.
 5. Keep output compact.
 

@@ -69,12 +69,12 @@ def normalize_text(text) -> str:
     """
     if not isinstance(text, str):
         return str(text) if text else ""
-    # Replace curly quotes and fancy chars with ASCII
+    # Replace curly quotes and fancy chars with ASCII using escape sequences
     replacements = {
-        ''': "'", ''': "'", '"': '"', '"': '"',
-        '–': '-', '—': '-', '…': '...',
+        '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+        '\u2013': '-', '\u2014': '-', '\u2026': '...',
         '\u2009': ' ', '\u00a0': ' ',  # thin/non-breaking spaces
-        '≤': '<=', '≥': '>=', '±': '+/-',
+        '\u2264': '<=', '\u2265': '>=', '\u00b1': '+/-',
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -107,7 +107,7 @@ def save_markdown(records: List[Dict[str, Any]], filename: str):
         lines.append(f"## {i}. [{title}](https://pubmed.ncbi.nlm.nih.gov/{pmid}/)\n")
         lines.append(f"**PMID**: {pmid} | **Score**: {score}")
         if escalation:
-            lines.append(f" | ⚠️ **Escalated**: {esc_reason[:50]}")
+            lines.append(f" | !! **Escalated**: {esc_reason[:50]}")
         lines.append("\n\n")
         
         lines.append(f"**Authors**: {authors[:100]}{'...' if len(authors) > 100 else ''}\n\n")

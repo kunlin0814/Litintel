@@ -32,15 +32,18 @@ discovery:
       NOT "Case Reports"[pt])
       AND english[la]
       NOT "Preprint"[Publication Type]
-  retmax: 30
+  retmax: 25
   reldays: 365
 
 ai:
   provider: gemini
   # Two-Pass Architecture Config
-  pass1_model_fulltext: "gemini-3.1-pro-preview"  # Pass 1 (Scoring) if Full Text
-  pass1_model_abstract: "gemini-3-flash-preview"  # Pass 1 (Scoring) if Abstract Only
-  pass2_model: "gemini-3.1-pro-preview"           # Pass 2 (Methods extraction)
+  pass1_model_fulltext: "gemini-3-flash-preview"   # Pass 1 (Scoring) if Full Text
+  pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
+  pass1_model_abstract: "gemini-3-flash-preview"   # Pass 1 (Scoring) if Abstract Only
+  pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
+  pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods extraction)
+  pass2_thinking: "LOW"                             # Thinking level for methods extraction
   pass2_min_score: 88                 # Trigger threshold for Pass 2 (score >= 88)
 
   max_chars: 80000

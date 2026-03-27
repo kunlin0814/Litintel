@@ -26,13 +26,13 @@ SYSTEM_INSTRUCTION = (
     "Given paper text, return ONLY a JSON object matching the provided schema.\\n\\n"
     "RelevanceScore rules:\\n"
     "- 0 = Not relevant (neither cancer nor spatial/single-cell/multi-omics).\\n"
-    "- 30–60 = Weak: generic cancer OR generic omics method.\\n"
-    "- 70–84 = Cancer-focused but limited spatial/single-cell/multi-omics.\\n"
-    "- 85–94 = Prostate cancer + at least one key technology (scRNA/snrna, scATAC/snatac, multiome, Visium/Xenium/CosMx/GeoMx).\\n"
-    "- 95–100 = Prostate cancer + both single-cell/multiome AND spatial technology.\\n"
-    "- For non-prostate cancers, assign ≥75 only if ≥3 relevant technologies are clearly used.\\n\\n"
+    "- 30-60 = Weak: generic cancer OR generic omics method.\\n"
+    "- 70-84 = Cancer-focused but limited spatial/single-cell/multi-omics.\\n"
+    "- 85-94 = Prostate cancer + at least one key technology (scRNA/snrna, scATAC/snatac, multiome, Visium/Xenium/CosMx/GeoMx).\\n"
+    "- 95-100 = Prostate cancer + both single-cell/multiome AND spatial technology.\\n"
+    "- For non-prostate cancers, assign >=75 only if >=3 relevant technologies are clearly used.\\n\\n"
     "WhyRelevant: 1 sentence explaining the score.\\n"
-    "StudySummary: 2–3 sentences (aim, system/cohort, main result).\\n"
+    "StudySummary: 2-3 sentences (aim, system/cohort, main result).\\n"
     "PaperRole: 1 sentence explaining the paper's role in the field (e.g. 'Core framework paper', 'Incremental method improvement').\\n"
     "Theme: Semi-colon separated controlled tags (e.g. 'Spatial lineage; Epigenetic heterogeneity; CNV inference').\\n"
     "Methods: Experimental platforms + computational tools if stated.\\n"
@@ -45,7 +45,7 @@ SYSTEM_INSTRUCTION = (
     "  4. If NO authors listed, use empty string.\\n\\n"
     "CellIdentitySignatures: Extract signatures explicitly used to define cell types/states (e.g. 'Basal: KRT5, KRT14; Luminal: KRT8, AR'). Empty if not reported.\\n"
     "PerturbationsUsed: Semicolon-separated list of genetic/chemical manipulations (e.g. 'PTEN loss; Enzalutamide; ERG OE'). Empty if none.\\n\\n"
-    "Missing info → empty string. No fabrication. Output compact JSON only."
+    "Missing info -> empty string. No fabrication. Output compact JSON only."
 )
 
 # Global model cache
@@ -439,7 +439,7 @@ def ai_enrich_records(
         "TEXT_END"
         )
         
-        # Estimate token usage (rough approximation: 1 token ≈ 4 characters)
+        # Estimate token usage (rough approximation: 1 token ~ 4 characters)
         estimated_input_tokens = len(user_prompt) // 4
         total_input_tokens += estimated_input_tokens
         elapsed_minutes = (time.time() - start_time) / 60.0 or 0.01

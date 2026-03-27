@@ -165,7 +165,7 @@ def build_notion_index(database_id: str) -> Dict[str, str]:
         database_id: Notion database ID
         
     Returns:
-        Dict mapping DedupeKey → page_id
+        Dict mapping DedupeKey -> page_id
     """
     token = os.environ.get("NOTION_TOKEN")
     if not token:

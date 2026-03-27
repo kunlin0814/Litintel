@@ -8,13 +8,13 @@
 
 ## What is This?
 
-This is not just a literature search script—it's a **Research Intelligence Layer**.
+This is not just a literature search script--it's a **Research Intelligence Layer**.
 
 It continuously monitors PubMed, uses AI to understand and score each paper, and persists structured insights to Notion and Google Drive. Your research "memory" grows over time, queryable by humans and AI agents alike (e.g., NotebookLM).
 
 **Key Capabilities:**
 -   **Two-Pass AI Architecture**: Pass 1 (Scoring) uses evidence-appropriate models; Pass 2 (Methods) extracts computational workflows from high-scoring full-text papers.
--   **Cost-Optimized**: Automatic **Prompt Caching** reduces API costs by ~50% through cache-aware processing order (Abstract-only → Full-text).
+-   **Cost-Optimized**: Automatic **Prompt Caching** reduces API costs by ~50% through cache-aware processing order (Abstract-only -> Full-text).
 -   **Shadow Judge**: Heuristic-triggered secondary validation with evidence requirement (quote or self-contradiction must be cited).
 -   **Smart Search**: Fetches papers in **batches of 200** to efficiently bypass duplicates and find new content using deep pagination (up to 1,000 papers).
 -   **Provenance Tracking**: Know exactly what evidence the AI used (`AI_EvidenceLevel`: FullText or Abstract).
@@ -99,11 +99,11 @@ src/litintel/
 The pipeline uses a cache-optimized two-pass system:
 
 ### Pass 1: Scoring & Metadata
-- **Abstract-only papers** → `gemini-3-flash-preview` (processed first to maximize cache hits)
-- **Full-text papers** → `gemini-3.1-pro-preview` (processed second, grouped together)
+- **Abstract-only papers** -> `gemini-3-flash-preview` (processed first to maximize cache hits)
+- **Full-text papers** -> `gemini-3.1-pro-preview` (processed second, grouped together)
 
 ### Pass 2: Methods Extraction (Batched)
-- Triggers only for papers with **Score ≥ 88** and full-text availability
+- Triggers only for papers with **Score >= 88** and full-text availability
 - Runs in **parallel** (ThreadPoolExecutor, max 3 workers) to keep prompt cache warm
 - Extracts `comp_methods` with structured `analyses` blocks
 
@@ -145,8 +145,8 @@ All AI-extracted fields are strictly typed:
 | 30-69 | 1 | Weak relevance |
 | 70-79 | 2 | Moderate / Ambiguous (Escalation Target) |
 | 80-89 | 3 | High / Solid (PCa + 1 key tech) |
-| 90-94 | 4 | Highest (Non-PCa + ≥3 techs, PCa + Multiome + Bulk) |
-| 95-100 | 4 | Must Read (PCa + Multiome + Spatial, ≥100 samples) |
+| 90-94 | 4 | Highest (Non-PCa + >=3 techs, PCa + Multiome + Bulk) |
+| 95-100 | 4 | Must Read (PCa + Multiome + Spatial, >=100 samples) |
 
 ---
 

@@ -17,7 +17,7 @@ def validate_results(esearch_out: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[s
     if count == 0 or count < drop_threshold or count > jump_threshold or gold_missing:
         status = "ALERT"
     logger.info(
-        "Validation → count=%s, gold_missing=%s, status=%s",
+        "Validation -> count=%s, gold_missing=%s, status=%s",
         count,
         gold_missing,
         status,
@@ -41,5 +41,5 @@ def validate_goldset(records: List[Dict[str, Any]], cfg: Dict[str, Any]) -> Dict
             seen.add(doi)
     missing = sorted(list(gold - seen))
     gold_missing = len(missing) > 0
-    logger.info("Gold validation → missing=%s", len(missing))
+    logger.info("Gold validation -> missing=%s", len(missing))
     return {"goldMissing": gold_missing, "missing": missing}

@@ -25,7 +25,7 @@ Your pipeline is deployed:
 
 ## Monitoring
 
-- **View Runs**: https://app.prefect.cloud → Flows.
+- **View Runs**: https://app.prefect.cloud -> Flows.
 - **Logs**: Click any run for details.
 - **Alerts**: Configure Slack/Email in Prefect Cloud settings.
 
