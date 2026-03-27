@@ -37,9 +37,12 @@ discovery:
 ai:
   provider: gemini
   # Two-Pass Architecture
-  pass1_model_fulltext: "gemini-3.1-pro-preview"  # Pass 1 (Scoring) if Full Text
-  pass1_model_abstract: "gemini-3-flash-preview"  # Pass 1 (Scoring) if Abstract Only
-  pass2_model: "gemini-3.1-pro-preview"           # Pass 2 (Methods extraction)
+  pass1_model_fulltext: "gemini-3-flash-preview"   # Pass 1 (Scoring) if Full Text
+  pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
+  pass1_model_abstract: "gemini-3-flash-preview"   # Pass 1 (Scoring) if Abstract Only
+  pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
+  pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods extraction)
+  pass2_thinking: "LOW"                             # Thinking level for methods extraction
   pass2_min_score: 88                 # Trigger threshold for Pass 2
 
   max_chars: 80000
@@ -85,8 +88,8 @@ graph TD
     H --> J[Set AI_EvidenceLevel = FullText]
     I --> K[Partition: Abstract vs Full-Text]
     J --> K
-    K --> L[Pass 1: Abstract-only Nano first]
-    L --> M[Pass 1: Full-text Mini second]
+    K --> L[Pass 1: Abstract-only Flash MEDIUM first]
+    L --> M[Pass 1: Full-text Flash HIGH second]
     M --> N[Pass 2: Batched Methods Extraction]
     N --> O[Upsert to Notion]
     O --> P[Sync to Drive JSONL/Markdown]
@@ -97,9 +100,9 @@ graph TD
 
 To maximize Gemini prompt caching (~50% cost reduction):
 
-1. **Abstract-only papers** processed first with `gemini-3-flash-preview`
-2. **Full-text papers** processed second with `gemini-3.1-pro-preview`
-3. **Pass 2** runs in parallel batch after all Pass 1 completes
+1. **Abstract-only papers** processed first with `gemini-3-flash-preview` (MEDIUM thinking)
+2. **Full-text papers** processed second with `gemini-3-flash-preview` (HIGH thinking)
+3. **Pass 2** runs in parallel batch after all Pass 1 completes, using `gemini-3.1-pro-preview` (LOW thinking)
 
 ---
 
@@ -186,8 +189,8 @@ class AnalysisStep(BaseModel):
 **Pass 1: Scoring & Metadata** (`enrich_record()`)
 
 - Model selection based on `has_full_text`:
-  - Abstract-only -> `pass1_model_abstract` (default: `gemini-3-flash-preview`)
-  - Full-text -> `pass1_model_fulltext` (default: `gemini-3.1-pro-preview`)
+  - Abstract-only -> `pass1_model_abstract` (`gemini-3-flash-preview`, MEDIUM thinking)
+  - Full-text -> `pass1_model_fulltext` (`gemini-3-flash-preview`, HIGH thinking)
 - Returns all metadata fields + `RelevanceScore`
 - Marks papers eligible for Pass 2 via `_pass2_eligible` flag
 
@@ -276,7 +279,7 @@ Registers the flow with Prefect Cloud:
 
 - Prompt caching reduces input token costs by ~50%
 - Two-Pass skips expensive methods extraction for low-scoring papers
-- Abstract-only papers use cheaper Nano model
+- Abstract-only papers use Flash with MEDIUM thinking
 
 ---
 
