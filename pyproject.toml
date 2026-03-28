@@ -26,7 +26,9 @@ dependencies = [
     "pyyaml",
     "typer",
     "rich",
-    "pydantic>=2.0.0"
+    "pydantic>=2.0.0",
+    "google-cloud-aiplatform>=1.49.0",
+    "google-adk>=0.3.0"
 ]
 requires-python = ">=3.9"
 

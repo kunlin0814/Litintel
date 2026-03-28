@@ -312,6 +312,24 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
         else:
             logger.warning("GOOGLE_DRIVE_FOLDER_ID not set, skipping Drive sync")
 
+    # RAG Corpus Sync (if VERTEX_RAG_CORPUS_NAME is set)
+    corpus_name = os.environ.get("VERTEX_RAG_CORPUS_NAME")
+    if corpus_name:
+        project_id = os.environ.get("GCP_PROJECT_ID")
+        if project_id:
+            try:
+                from litintel.storage.rag_corpus import upsert_to_rag_corpus
+                logger.info("Syncing to Vertex AI RAG corpus...")
+                upsert_to_rag_corpus(
+                    records=valid_records,
+                    corpus_name=corpus_name,
+                    project_id=project_id,
+                )
+            except Exception as e:
+                logger.error(f"RAG corpus sync failed: {e}")
+        else:
+            logger.warning("GCP_PROJECT_ID not set -- skipping RAG sync")
+
     # Log execution
     append_run_log(
         config_dict=config.model_dump(),

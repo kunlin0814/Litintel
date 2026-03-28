@@ -10,3 +10,5 @@ openai==2.11.0
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+google-cloud-aiplatform>=1.49.0
+google-adk>=0.3.0
