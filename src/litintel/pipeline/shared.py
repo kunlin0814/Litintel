@@ -54,11 +54,49 @@ def deduplicate_records(records: List[Dict[str, Any]], keys: List[str] = ["DOI",
     return final_df.to_dict(orient="records")
 
 def save_csv(records: List[Dict[str, Any]], filename: str):
+    """Save records to CSV, appending to existing file and deduplicating.
+
+    If the file already exists, new records are merged with existing ones.
+    Deduplication priority: PMID first, then DOI. Newer records (from current
+    run) overwrite older duplicates so enrichment updates are preserved.
+    """
     if not records:
         return
-    df = pd.DataFrame(records)
-    df.to_csv(filename, index=False, encoding='utf-8-sig')  # BOM for Excel
-    logger.info(f"Saved {len(records)} records to {filename}")
+
+    import os
+    new_df = pd.DataFrame(records)
+
+    if os.path.exists(filename):
+        try:
+            existing_df = pd.read_csv(filename, encoding='utf-8-sig', dtype=str)
+            logger.info(f"Loaded {len(existing_df)} existing records from {filename}")
+
+            # Combine: new records first so they take priority in drop_duplicates
+            combined = pd.concat([new_df, existing_df], ignore_index=True)
+
+            # Deduplicate by PMID (primary), then DOI (fallback)
+            before = len(combined)
+            # Keep first occurrence = keep the new record over the old one
+            if 'PMID' in combined.columns:
+                mask_pmid = combined['PMID'].notna() & (combined['PMID'] != '')
+                deduped_pmid = combined[mask_pmid].drop_duplicates(subset=['PMID'], keep='first')
+                no_pmid = combined[~mask_pmid]
+                combined = pd.concat([deduped_pmid, no_pmid], ignore_index=True)
+
+            if 'DOI' in combined.columns:
+                mask_doi = combined['DOI'].notna() & (combined['DOI'] != '')
+                deduped_doi = combined[mask_doi].drop_duplicates(subset=['DOI'], keep='first')
+                no_doi = combined[~mask_doi]
+                combined = pd.concat([deduped_doi, no_doi], ignore_index=True)
+
+            after = len(combined)
+            logger.info(f"Merged: {len(new_df)} new + {len(existing_df)} existing -> {after} total ({before - after} duplicates removed)")
+            new_df = combined
+        except Exception as e:
+            logger.warning(f"Could not read existing {filename}, overwriting: {e}")
+
+    new_df.to_csv(filename, index=False, encoding='utf-8-sig')
+    logger.info(f"Saved {len(new_df)} records to {filename}")
 
 
 def normalize_text(text) -> str:
