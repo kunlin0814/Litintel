@@ -284,8 +284,8 @@ def upsert_to_rag_corpus(
                 else:
                     logger.info("Uploaded RAG doc: PMID %s (score=%d)", pmid, score)
                     uploaded += 1
-            except Exception:
-                logger.exception("Failed to upload RAG doc for PMID %s", pmid)
+            except Exception as e:
+                logger.error("Failed to upload RAG doc for PMID %s: %s", pmid, e)
                 errors += 1
 
     logger.info(

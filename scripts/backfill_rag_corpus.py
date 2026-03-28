@@ -60,7 +60,7 @@ def main():
     parser.add_argument(
         '--min-score',
         type=int,
-        default=70,
+        default=80,
         help='Minimum RelevanceScore for RAG inclusion (default: 70)',
     )
     parser.add_argument(

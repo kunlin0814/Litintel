@@ -13,7 +13,7 @@ Usage (CLI -- see cli.py):
 import os
 
 from google.adk.agents import Agent
-from google.adk.tools import VertexAiRagRetrieval
+from google.adk.tools.retrieval.vertex_ai_rag_retrieval import VertexAiRagRetrieval
 
 CORPUS_NAME = os.environ.get('VERTEX_RAG_CORPUS_NAME', '')
 PROJECT_ID = os.environ.get('GCP_PROJECT_ID', '')
@@ -41,18 +41,14 @@ litintel_retrieval = VertexAiRagRetrieval(
         'and spatial omics papers. Use this tool to find papers by topic, '
         'method, gene, cell type, dataset, or any research question.'
     ),
-    rag_resources=[
-        VertexAiRagRetrieval.RagResource(
-            rag_corpus=CORPUS_NAME,
-        )
-    ],
+    rag_corpora=[CORPUS_NAME],
     similarity_top_k=10,
     vector_distance_threshold=0.5,
 )
 
 root_agent = Agent(
     name='litintel_agent',
-    model='gemini-2.0-flash',
+    model='gemini-2.5-flash',
     description='Research assistant for prostate cancer and spatial omics literature',
     instruction=SYSTEM_INSTRUCTION,
     tools=[litintel_retrieval],
