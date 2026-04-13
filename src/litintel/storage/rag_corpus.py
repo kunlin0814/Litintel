@@ -174,7 +174,7 @@ def upsert_to_rag_corpus(
     records: List[Dict[str, Any]],
     corpus_name: str,
     project_id: str,
-    location: str = "us-central1",
+    location: str = None,
     min_score: int = DEFAULT_MIN_SCORE,
     force_update: bool = False,
 ) -> None:
@@ -205,6 +205,14 @@ def upsert_to_rag_corpus(
     if not records:
         logger.info("RAG upsert: no records to process")
         return
+
+    # Extract location from corpus_name (projects/{project}/locations/{loc}/ragCorpora/{id})
+    if not location:
+        parts = corpus_name.split("/")
+        if len(parts) >= 6 and parts[2] == "locations":
+            location = parts[3]
+        else:
+            location = "us-central1"
 
     vertexai.init(project=project_id, location=location)
 
