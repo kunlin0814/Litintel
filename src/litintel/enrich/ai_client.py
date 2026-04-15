@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any, Tuple, Optional, List
 from pydantic import ValidationError
 
-import google.generativeai as genai_legacy # Keep legacy if needed
+# Legacy generativeai imports removed - using unified google.genai sdk only
 from google import genai
 from google.genai import types
 
@@ -46,10 +46,18 @@ def _extract_json(raw: str) -> Dict[str, Any]:
         logger.warning(f"JSON decode error: {e}. Raw (first 500): {raw[:500]}")
         return {}
 
-# Global Clients (OpenAI client can be cached; Gemini model cannot due to varying config)
+# Global Clients (OpenAI client can be cached; Gemini client cached)
 _OPENAI_CLIENT = None
 _GEMINI_CLIENT = None
-_GEMINI_CONFIGURED = False
+
+def _use_vertex_ai() -> bool:
+    """Check if Vertex AI mode is enabled (default: True).
+
+    Set USE_VERTEX_AI=false in env to fall back to API key mode.
+    Vertex AI requires GCP_PROJECT_ID (and optionally GCP_LOCATION).
+    API key mode requires GOOGLE_API_KEY.
+    """
+    return os.environ.get('USE_VERTEX_AI', 'true').lower() not in ('false', '0', 'no')
 
 def _get_openai_client():
     global _OPENAI_CLIENT
@@ -60,35 +68,39 @@ def _get_openai_client():
     return _OPENAI_CLIENT
 
 def _get_gemini_client():
+    """Return a cached google-genai Client.
+
+    Default: Vertex AI mode (enterprise license, data not used for training).
+      Requires: GCP_PROJECT_ID env var, ADC credentials (gcloud auth).
+      Optional: GCP_LOCATION env var (default: us-central1).
+
+    Fallback: API key mode (set USE_VERTEX_AI=false).
+      Requires: GOOGLE_API_KEY env var.
+    """
     global _GEMINI_CLIENT
     if not _GEMINI_CLIENT:
-        if not os.environ.get("GOOGLE_API_KEY"):
-            raise ValueError("GOOGLE_API_KEY not set")
-        _GEMINI_CLIENT = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+        if _use_vertex_ai():
+            project = os.environ.get('GCP_PROJECT_ID')
+            if not project:
+                raise ValueError(
+                    'GCP_PROJECT_ID not set. Required for Vertex AI mode. '
+                    'Set USE_VERTEX_AI=false to use API key instead.'
+                )
+            location = os.environ.get('GCP_LOCATION', 'us-central1')
+            _GEMINI_CLIENT = genai.Client(
+                vertexai=True,
+                project=project,
+                location=location,
+            )
+            logger.info('Gemini client initialized via Vertex AI (project=%s, location=%s)', project, location)
+        else:
+            api_key = os.environ.get('GOOGLE_API_KEY')
+            if not api_key:
+                raise ValueError('GOOGLE_API_KEY not set (API key mode)')
+            _GEMINI_CLIENT = genai.Client(api_key=api_key)
+            logger.info('Gemini client initialized via API key')
     return _GEMINI_CLIENT
 
-def _configure_gemini():
-    """Legacy configure Gemini API once. Raises if API key is missing."""
-    global _GEMINI_CONFIGURED
-    if not _GEMINI_CONFIGURED:
-        api_key = os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY not set")
-        genai_legacy.configure(api_key=api_key)
-        _GEMINI_CONFIGURED = True
-
-def _get_gemini_model(system_instruction: str, response_schema: Dict[str, Any]):
-    """Create a fresh Gemini model per call (system_instruction & schema vary by tier) - Legacy."""
-    _configure_gemini()
-    return genai_legacy.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system_instruction,
-        generation_config={
-            "temperature": 0.1,
-            "response_mime_type": "application/json",
-            "response_schema": response_schema,
-        },
-    )
 
 def _call_gemini(
     client: genai.Client,
