@@ -148,6 +148,29 @@ def _call_gemini(
         return _extract_json(raw_json), usage
         
     except Exception as e:
+        # Fallback: if thinking_level is not supported by this model/region,
+        # retry without ThinkingConfig so the pipeline does not break.
+        if "thinking_level is not supported" in str(e):
+            logger.warning(
+                f"Gemini {model}: thinking_level not supported in this region/model. "
+                f"Retrying without ThinkingConfig..."
+            )
+            config.thinking_config = None
+            response = client.models.generate_content(
+                model=model,
+                contents=user_prompt,
+                config=config
+            )
+            raw_json = response.text
+            usage = {
+                "input": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+                "output": response.usage_metadata.candidates_token_count if response.usage_metadata else 0,
+                "cached": response.usage_metadata.cached_content_token_count if getattr(response.usage_metadata, 'cached_content_token_count', None) else 0,
+                "thinking": 0
+            }
+            logger.debug(f"Gemini raw response ({model}, no thinking): {raw_json[:500] if raw_json else ''}...")
+            return _extract_json(raw_json), usage
+
         # Simple Rate Limit Retry Logic
         if "429" in str(e) or "quota" in str(e).lower() or "rate limit" in str(e).lower():
             logger.warning(f"Gemini 429 Rate Limit. Retrying {model}...")
