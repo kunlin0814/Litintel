@@ -60,7 +60,7 @@ def get_drive_service(credentials_path: Optional[str] = None):
             logger.warning(f"Service Account check failed: {e}")
 
     # 2. Try User OAuth Flow (Client Secrets)
-    client_secrets = os.environ.get("GOOGLE_CLIENT_SECRETS_PATH")
+    client_secrets = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRETS_PATH")
     if not creds and client_secrets and os.path.exists(client_secrets):
         token_path = 'token.json'
         
@@ -96,7 +96,7 @@ def get_drive_service(credentials_path: Optional[str] = None):
     
     if not creds:
         raise ValueError(
-            "No valid credentials found. Please set GOOGLE_CLIENT_SECRETS_PATH "
+            "No valid credentials found. Please set GOOGLE_DRIVE_CLIENT_SECRET "
             "(for personal accounts) or GOOGLE_CREDENTIALS_PATH (for service accounts)."
         )
     

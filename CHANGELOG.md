@@ -4,6 +4,25 @@ All notable changes to LitIntel are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-25
+
+### Added
+- **GCP credentials guide** (`docs/gcp_credentials_guide.md`) -- comprehensive troubleshooting reference covering credential types, multi-project CLI coexistence, OAuth consent screen issues, and company GCP migration checklist
+- **Service Account isolation** -- Vertex AI now authenticates via `GOOGLE_APPLICATION_CREDENTIALS` (Service Account JSON), fully decoupled from the `gcloud` CLI project context
+- **Drive OAuth refactor** -- new `GOOGLE_DRIVE_CLIENT_SECRET` env var separates Drive authentication from Vertex AI credentials; falls back to legacy `GOOGLE_CLIENT_SECRETS_PATH` for backward compatibility
+- **Drive sync test script** (`scripts/test_drive_sync.py`) -- single-PMID end-to-end test for Google Drive upload
+
+### Changed
+- Vertex AI endpoint switched to `global` location for broader model availability (Gemini 3 Preview)
+- `_call_gemini()` now retries without `ThinkingConfig` if the model/region rejects thinking parameters, preventing hard failures on preview models
+- Updated `docs/google_drive_setup.md` to reflect OAuth Client Secret flow (replacing outdated Service Account instructions)
+
+### Fixed
+- **"Client secrets must be for a web or installed app"** -- Drive auth no longer accidentally uses ADC or Service Account files for OAuth
+- **"Access blocked: has not completed verification" (403)** -- documented fix (publish OAuth consent screen) in credentials guide
+
+---
+
 ## [0.2.0] - 2026-03-28
 
 ### Added
