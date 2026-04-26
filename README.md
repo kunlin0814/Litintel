@@ -112,7 +112,7 @@ The pipeline uses a cache-optimized two-pass system:
 ```yaml
 ai:
   pass1_model_fulltext: "gemini-3-flash-preview"   # Pass 1 if Full Text
-  pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
+  pass1_thinking_fulltext: "MEDIUM"                   # Thinking level for full-text scoring
   pass1_model_abstract: "gemini-3-flash-preview"   # Pass 1 if Abstract Only
   pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
   pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods)
