@@ -61,7 +61,19 @@ Behavior rules:
 def retrieve_chunks(question: str, top_k: int = 10) -> str:
     """Retrieve relevant chunks from Vertex AI RAG corpus."""
     import vertexai
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    
+    # Extract the RAG location from the fully qualified corpus name 
+    # e.g., projects/123/locations/us-east5/ragCorpora/456 -> us-east5
+    # Default to LOCATION if parsing fails
+    rag_location = LOCATION
+    if CORPUS_NAME and 'locations/' in CORPUS_NAME:
+        try:
+            parts = CORPUS_NAME.split('/')
+            rag_location = parts[parts.index('locations') + 1]
+        except (ValueError, IndexError):
+            pass
+
+    vertexai.init(project=PROJECT_ID, location=rag_location)
 
     response = rag.retrieval_query(
         rag_resources=[
@@ -86,7 +98,7 @@ def retrieve_chunks(question: str, top_k: int = 10) -> str:
 
 
 def query(client, question: str, thinking_level: str = 'LOW', top_k: int = 10) -> str:
-    """Retrieve context from RAG, then generate answer with Gemini."""
+    """Retrieve context from RAG, then generate answer with Gemini via Vertex AI."""
     # Step 1: Retrieve from Vertex AI RAG
     context = retrieve_chunks(question, top_k=top_k)
 
@@ -179,13 +191,14 @@ def main():
         print('ERROR: GCP_PROJECT_ID not set in .env.')
         sys.exit(1)
 
-    api_key = os.environ.get('GOOGLE_API_KEY')
-    if not api_key:
-        print('ERROR: GOOGLE_API_KEY not set in .env.')
+    # Initialize Gemini client via Vertex AI
+    # This allows us to use GCP_LOCATION (e.g., 'global') for the LLM inference
+    # while the RAG engine uses its own specific location.
+    try:
+        client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+    except Exception as e:
+        print(f"ERROR: Failed to initialize Vertex AI client. Ensure you are authenticated with 'gcloud auth application-default login'. Details: {e}")
         sys.exit(1)
-
-    # Initialize Gemini client via Developer API (has gemini-3 access)
-    client = genai.Client(api_key=api_key)
 
     if args.interactive or args.query is None:
         interactive_loop(client, args.thinking, args.top_k)
