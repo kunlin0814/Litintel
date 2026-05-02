@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 import requests
@@ -8,7 +9,26 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
-def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: int = 0, email: str = "agent@deepmind.com") -> List[str]:
+
+def _ncbi_email() -> str:
+    """Return NCBI_EMAIL from env, or raise if unset."""
+    email = os.environ.get("NCBI_EMAIL")
+    if not email:
+        raise ValueError(
+            "NCBI_EMAIL not set. Add it to .env -- NCBI requires a contact "
+            "email for E-utilities requests."
+        )
+    return email
+
+
+def _ncbi_api_key() -> str:
+    """Return NCBI_API_KEY from env, or empty string if unset.
+
+    With an API key NCBI allows 10 requests/sec instead of 3.
+    """
+    return os.environ.get("NCBI_API_KEY", "")
+
+def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: int = 0) -> List[str]:
     # eSearch
     params = {
         "db": "pubmed",
@@ -18,9 +38,12 @@ def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: in
         "reldate": reldays,
         "datetype": "pdat",
         "sort": "relevance",
-        "email": email,
-        "retmode": "json" # JSON is easier for ID list
+        "email": _ncbi_email(),
+        "retmode": "json",  # JSON is easier for ID list
     }
+    api_key = _ncbi_api_key()
+    if api_key:
+        params["api_key"] = api_key
     
     try:
         resp = requests.get(f"{BASE_URL}/esearch.fcgi", params=params, timeout=30)
@@ -33,12 +56,14 @@ def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: in
         logger.error(f"ESearch failed for {query}: {e}")
         return []
 
-def fetch_details(pmids: List[str], email: str = "agent@deepmind.com", batch_size: int = 200) -> str:
+def fetch_details(pmids: List[str], batch_size: int = 200) -> str:
     """Fetch PubMed article details in batches (NCBI recommends max 200 IDs per request)."""
     if not pmids:
         return ""
     
     all_xml_parts = []
+    email = _ncbi_email()
+    api_key = _ncbi_api_key()
     
     # Batch the PMIDs
     for i in range(0, len(pmids), batch_size):
@@ -49,8 +74,10 @@ def fetch_details(pmids: List[str], email: str = "agent@deepmind.com", batch_siz
             "db": "pubmed",
             "id": ids_str,
             "retmode": "xml",
-            "email": email
+            "email": email,
         }
+        if api_key:
+            params["api_key"] = api_key
         
         try:
             resp = requests.post(f"{BASE_URL}/efetch.fcgi", data=params, timeout=60)
@@ -87,22 +114,22 @@ def fetch_details(pmids: List[str], email: str = "agent@deepmind.com", batch_siz
         return all_xml_parts[0] if all_xml_parts else ""
 
 
-def fetch_pmc_fulltext(pmcids: List[str], email: str = "agent@deepmind.com", batch_size: int = 50) -> Dict[str, str]:
-    """
-    Fetch PMC full-text XML for given PMCIDs.
-    
+def fetch_pmc_fulltext(pmcids: List[str], batch_size: int = 50) -> Dict[str, str]:
+    """Fetch PMC full-text XML for given PMCIDs.
+
     Args:
-        pmcids: List of PMCIDs (with or without 'PMC' prefix)
-        email: Email for E-utilities
-        batch_size: Number of PMCIDs per batch
-        
+        pmcids: List of PMCIDs (with or without 'PMC' prefix).
+        batch_size: Number of PMCIDs per batch.
+
     Returns:
-        Dict mapping PMCID to raw PMC XML string
+        Dict mapping PMCID to raw PMC XML string.
     """
     if not pmcids:
         return {}
     
     results = {}
+    email = _ncbi_email()
+    api_key = _ncbi_api_key()
     
     for i in range(0, len(pmcids), batch_size):
         batch = pmcids[i:i + batch_size]
@@ -113,8 +140,10 @@ def fetch_pmc_fulltext(pmcids: List[str], email: str = "agent@deepmind.com", bat
             "db": "pmc",
             "retmode": "xml",
             "id": ",".join(ids_stripped),
-            "email": email
+            "email": email,
         }
+        if api_key:
+            params["api_key"] = api_key
         
         try:
             resp = requests.get(f"{BASE_URL}/efetch.fcgi", params=params, timeout=120)

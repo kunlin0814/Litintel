@@ -178,7 +178,9 @@ def main():
     notion_db_id = os.environ.get('NOTION_DB_ID')
     corpus_name = os.environ.get('VERTEX_RAG_CORPUS_NAME')
     project_id = os.environ.get('GCP_PROJECT_ID')
-    location = os.environ.get('GCP_LOCATION', 'us-east5')
+    # NOTE: location is derived from VERTEX_RAG_CORPUS_NAME inside
+    # upsert_to_rag_corpus(), not from GCP_LOCATION (which is 'global'
+    # for Gemini model access).
 
     missing = []
     if not notion_token:
@@ -232,7 +234,6 @@ def main():
         records=eligible,
         corpus_name=corpus_name,
         project_id=project_id,
-        location=location,
         min_score=args.min_score,
     )
 
