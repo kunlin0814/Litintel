@@ -39,3 +39,4 @@ scripts/generate_*.py
 *.egg-info/
 .claude/settings.local.json
 dev/*
+AGENTS.md

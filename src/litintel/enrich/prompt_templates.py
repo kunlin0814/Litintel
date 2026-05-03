@@ -439,27 +439,26 @@ TASK
 ================================================================================
 Analyze the provided paper text and return a structured JSON object.
 
-Your goal is to assess **relevance to cancer lineage plasticity** -- the ability
-of cancer cells to switch identity, phenotype, or differentiation state -- and
-assign a **numerical relevance score (0-100)** consistent with the tier
-definitions and hard rules below.
+Your goal is to create a Notion-ready literature triage entry for cancer
+lineage plasticity. The entry must help a researcher decide whether the paper
+is worth close reading, citation, dataset reuse, methods follow-up, or human
+review.
+
+Cancer lineage plasticity means the ability of cancer cells to switch identity,
+phenotype, or differentiation state. Assign a numerical relevance score (0-100)
+consistent with the tier definitions below, but optimize the whole JSON object
+for later decision-making in Notion, not just for scoring.
 
 ================================================================================
-OUTPUT JSON SCHEMA (STRICT)
+OUTPUT JSON SCHEMA (NOTION-READY)
 ================================================================================
-CRITICAL OUTPUT COMPLETENESS RULES:
-
-- ALL fields listed in the OUTPUT JSON SCHEMA MUST appear in the output.
-- If a field is not applicable or not explicitly reported in the paper:
-  - You MUST still include the field.
-  - Use an empty string "" as the value.
-- OMITTING a field is a FAILURE, even if the content is unknown.
-You MUST return a JSON object with EXACTLY these fields:
+Return a JSON object with exactly these fields. Use empty string "" for any
+field where the paper does not provide the relevant information.
 
 {
   "RelevanceScore": <integer 0-100>,
   "WhyRelevant": "One sentence justification",
-  "WhyYouMightCare": "One sentence: why a researcher should read this (e.g., novel mechanism, reusable dataset, therapeutic angle)",
+  "WhyYouMightCare": "One sentence: why a researcher should read this",
   "StudySummary": "2-3 sentences describing aim, cohort, and result",
   "PaperRole": "One sentence about paper's contribution",
   "Theme": "Tag1; Tag2; Tag3",
@@ -471,42 +470,44 @@ You MUST return a JSON object with EXACTLY these fields:
   "PerturbationsUsed": "Perturbation1; Perturbation2"
 }
 
-IMPORTANT:
-- The numeric value shown in the schema is NOT a default or anchor.
-- The final RelevanceScore MUST obey tier ranges and hard rules below.
+Output completeness is part of success. Omitting any field is an incorrect
+response, even when the content is unknown. Do not add extra fields; encode
+caveats and next action in the existing fields using the guidelines below.
 
 ================================================================================
-SCORING DECISION ORDER (MANDATORY)
+DEFINITION OF SUCCESS
 ================================================================================
 
-You MUST follow this order when determining the final score:
+The response is successful only if it can be written directly into the LitIntel
+Notion database as a reviewable triage entry.
 
-1) Detect PLASTICITY EVIDENCE by keyword and concept matching:
-   - lineage_transition_present (true/false): evidence of cells switching
-     identity, phenotype, or differentiation state
-   - mechanism_identified (true/false): molecular driver identified
-     (TF, chromatin state, signaling pathway, epigenetic event)
-   - functional_validation (true/false): perturbation, lineage tracing,
-     or in vivo evidence supporting the transition
+Before returning JSON, check that the entry answers these questions:
 
-2) Determine transition_evidence_level:
-   - none: no evidence of plasticity/transitions
-   - descriptive: cell states documented but no transition evidence
-   - inferred: trajectory, pseudotime, or computational prediction of transition
-   - demonstrated: experimental evidence of phenotype switching
+1. What is the paper's one-sentence role or verdict?
+2. Why does the score match the evidence strength?
+3. What biological finding or mechanism matters for lineage plasticity?
+4. What methods, data types, and cohorts support the claim?
+5. What is missing or weak: transition evidence, mechanism, validation,
+   perturbation, human tissue, single-cell/spatial resolution, or cohort fit?
+6. What should Kun-Lin do next: read closely, cite, reuse dataset, follow up on
+   methods, ignore, or review manually?
 
-3) Determine Tier (0-4) using Tier Definitions and requirements.
-   Tier assignment is a GATE and overrides numeric intuition.
+================================================================================
+SCORING APPROACH
+================================================================================
 
-4) Compute a score within the tier's allowed range using:
-   - base score
-   - additions
-   - multipliers
-   - boosters
-   - hard rules
+Determine the score by answering three questions about the paper:
 
-5) Apply HARD RULES.
-   If Tier 4 requirements are met, the final score MUST be >=90.
+1. Does the paper provide evidence of cancer cells SWITCHING identity,
+   phenotype, or differentiation state? (lineage transition)
+2. Is a molecular MECHANISM identified -- a transcription factor, chromatin
+   state change, signaling pathway, or epigenetic event driving the switch?
+3. Is there FUNCTIONAL VALIDATION -- perturbation, lineage tracing, or
+   in vivo evidence confirming the transition?
+
+Then assign a tier based on the answers. The tier determines the score range.
+Pick a score within the tier range that reflects the paper's depth, novelty,
+and data quality. See CALIBRATION EXAMPLES below for guidance.
 
 ================================================================================
 RELEVANCE SCORING RUBRIC
@@ -625,54 +626,30 @@ mechanism_evidence:
     - epigenetic reprogramming event characterized
 
 --------------------------------------------------------------------------------
-BASE SCORE CALCULATION
+SCORING SIGNALS (GUIDE, NOT FORMULA)
 --------------------------------------------------------------------------------
 
-base_score:
-  start: 65
-  additions:
-    lineage_transition_present: 10
-    mechanism_identified: 8
-    single_cell_resolution: 5
-    multiome: 8
-    spatial_transcriptomic: 5
-    epigenetic_profiling: 5
-    trajectory_methods: 3
-    functional_validation: 8
-  rules:
-    - multiome_replaces_individual_sc: true
-    - cap_at_89_if_tier_lt_4: true
+These signals help you place the paper within its tier range. They are NOT
+arithmetic -- use your judgment to weigh their combination:
 
---------------------------------------------------------------------------------
-TRANSITION EVIDENCE MULTIPLIER
---------------------------------------------------------------------------------
+Strong upward signals (push toward top of tier range):
+  - Lineage transition directly demonstrated (not just inferred)
+  - Molecular mechanism identified and validated
+  - Multi-modal evidence (e.g., scRNA + scATAC + perturbation)
+  - Functional validation (CRISPR KO, lineage tracing, in vivo)
+  - Human patient tissue with single-cell resolution
+  - Temporal sampling capturing phenotype shift
 
-transition_multiplier:
-  levels:
-    none:
-      multiplier: 0.70
-    descriptive:
-      multiplier: 1.00
-    inferred:
-      multiplier: 1.05
-    demonstrated:
-      multiplier: 1.10
+Moderate signals:
+  - Single-cell or spatial resolution (generated or referenced)
+  - Trajectory / pseudotime analysis suggesting transition
+  - Therapeutic relevance shown
 
-  hard_rules:
-    - if_tier4_requirements_met_min_score: 90
-    - if_transition_demonstrated_min_score: 80
-
---------------------------------------------------------------------------------
-BONUS BOOSTERS (NOT GATES)
---------------------------------------------------------------------------------
-
-boosters:
-  perturbation_experiment: +2
-  in_vivo_validation: +2
-  therapeutic_relevance: +2
-  human_patient_tissue: +2
-  temporal_sampling: +2
-  cap_total_boosters: 6
+Weak or absent signals (push toward bottom of tier range):
+  - Bulk-only data
+  - Computational prediction without validation
+  - Tangential mention of plasticity
+  - Review or commentary without new data
 
 --------------------------------------------------------------------------------
 TIERS
@@ -742,27 +719,48 @@ cancer_type_rules:
     requirements are met. No cancer-type penalty applied.
 
 ================================================================================
-FINAL NOTE
+CALIBRATION EXAMPLES
 ================================================================================
 
-If Tier 4 requirements are met, assigning a score <90 is a violation of this rubric.
-FINAL OUTPUT CHECKLIST (MANDATORY INTERNAL STEP):
-Before responding, VERIFY that your JSON includes ALL of the following keys:
+Example 1 -- Tier 4B, score 96:
+  Paper: snRNA-seq + snATAC-seq of 20 prostate cancer patients showing NE
+  transdifferentiation trajectory. ASCL1/FOXA2 co-accessibility marks a
+  chromatin priming state. CRISPR KO of ASCL1 reverses NE phenotype in
+  patient-derived organoids.
+  Why 96: Transition demonstrated + mechanism identified (ASCL1/FOXA2) +
+  functional validation (CRISPR KO) + multi-modal (RNA + ATAC) + human tissue.
 
-1. RelevanceScore
-2. WhyRelevant
-3. WhyYouMightCare
-4. StudySummary
-5. PaperRole
-6. Theme
-7. Methods
-8. KeyFindings
-9. DataTypes
-10. Group
-11. CellIdentitySignatures
-12. PerturbationsUsed
+Example 2 -- Tier 3, score 85:
+  Paper: scRNA-seq + ATAC-seq of melanoma showing SOX10-low/AXL-high
+  drug-tolerant state after BRAF inhibition. Trajectory analysis maps
+  transition path. No perturbation to confirm mechanism.
+  Why 85: Transition inferred + mechanism proposed (SOX10/AXL axis) +
+  multi-modal but NO functional validation. Falls short of Tier 4.
 
-If ANY key is missing, STOP and fix the output before responding.
+Example 3 -- Tier 2, score 74:
+  Paper: scRNA-seq atlas of PDAC identifying EMT-like cancer cell states
+  via clustering. Reports EMT signature scores but no trajectory, no
+  temporal sampling, no mechanism.
+  Why 74: Cell states documented but transition NOT demonstrated. Single
+  modality. No mechanism. Solidly Tier 2.
+
+Example 4 -- Tier 1, score 45:
+  Paper: Review of lineage plasticity in urological cancers. Discusses
+  published findings, proposes conceptual framework. No new data.
+  Why 45: Relevant topic but review only. No original data or analysis.
+
+Example 5 -- Tier 0, score 15:
+  Paper: New scRNA-seq clustering tool benchmarked on PBMC data. No cancer
+  application demonstrated.
+  Why 15: Bioinformatics tool with no cancer context. No plasticity content.
+
+================================================================================
+HARD RULE
+================================================================================
+
+If a paper meets ALL Tier 4 requirements (transition demonstrated + mechanism
+identified + functional validation or multi-modal evidence), the score MUST
+be >= 90. Assigning < 90 to a Tier 4 paper is incorrect.
 ================================================================================
 METHOD & PLATFORM TAXONOMY
 ================================================================================
@@ -818,15 +816,26 @@ FIELD EXTRACTION GUIDELINES
 ================================================================================
 
 ### WhyRelevant
-- 1 sentence explaining why you assigned the RelevanceScore
-- Be specific about plasticity evidence and molecular mechanisms
+- 1 sentence explaining why you assigned the RelevanceScore.
+- Include the main caveat when the score is limited by missing transition,
+  mechanism, validation, cohort relevance, or assay depth.
+- Be specific about plasticity evidence and molecular mechanisms.
+
+### WhyYouMightCare
+- 1 sentence explaining the practical next action for Kun-Lin.
+- Use concrete action language when obvious: "Read closely", "Cite for
+  background", "Reuse dataset", "Methods follow-up", "Low priority", or
+  "Human review".
+- Tie the action to the paper's value, such as novel mechanism, reusable data,
+  strong validation, weak evidence, or conceptual framing.
 
 ### StudySummary
 - 2-3 sentences covering: (1) study aim, (2) system/cohort studied, (3) main finding
 - Example: "This study mapped the neuroendocrine transdifferentiation trajectory in treatment-resistant prostate cancer using snRNA-seq and snATAC-seq from 20 patient samples. The authors identified a chromatin priming state preceding NE commitment marked by ASCL1/FOXA2 co-accessibility. CRISPR knockout of ASCL1 reversed the NE phenotype in patient-derived organoids."
 
 ### PaperRole
-- 1 sentence categorizing the paper's contribution to plasticity understanding
+- 1 sentence categorizing the paper's contribution to plasticity understanding.
+- This is the Notion verdict field: make it useful without rereading the paper.
 - Examples: "First multi-modal atlas of NEPC transition states", "Identifies novel TF circuit driving EMT in PDAC", "Benchmarks lineage inference tools on cancer plasticity datasets"
 
 ### Theme
@@ -861,28 +870,39 @@ FIELD EXTRACTION GUIDELINES
 - Format: "LastName Lab" or just "LastName"
 
 ### CellIdentitySignatures
-- This field MUST always be present in the JSON.
 - Extract gene signatures explicitly used to define cell types or states,
-  ESPECIALLY signatures marking transition states or plastic intermediates.
-- If NO explicit gene-based cell identity signatures are reported,
-  return an empty string "" -- do NOT omit the field.
+  especially signatures marking transition states or plastic intermediates.
 - Format: "CellType1: GENE1, GENE2; CellType2: GENE3, GENE4"
 - Example: "NE-like: SYP, CHGA, ASCL1; Intermediate: KRT8, FOXA2, REST-low; Luminal: AR, KLK3, NKX3-1"
+- Return empty string if not reported.
 
 ### PerturbationsUsed
-- Semicolon-separated list of genetic or chemical manipulations
-- CRITICAL for plasticity: these often provide functional validation
+- Semicolon-separated list of genetic or chemical manipulations.
 - Include: knockouts, knockdowns, overexpression, drug treatments, CRISPR screens,
-  lineage tracing, inducible systems
+  lineage tracing, inducible systems.
 - Example: "ASCL1 CRISPR KO; Enzalutamide treatment; REST shRNA knockdown; Cre-lox lineage tracing"
-- Return empty string if no perturbations
+- Return empty string if no perturbations.
 
-Omitting any required JSON field (even if empty) will be treated as an incorrect response.
 ================================================================================
-7. All 12 base fields are REQUIRED.
+FINAL OUTPUT CHECK
+================================================================================
 
-Omitting any required JSON field (even if empty) will be treated as an incorrect response.
-================================================================================
+Before responding, verify that all 12 fields are present:
+
+1. RelevanceScore
+2. WhyRelevant
+3. WhyYouMightCare
+4. StudySummary
+5. PaperRole
+6. Theme
+7. Methods
+8. KeyFindings
+9. DataTypes
+10. Group
+11. CellIdentitySignatures
+12. PerturbationsUsed
+
+If any field is missing, fix the JSON before returning it.
 """
 
 # =============================================================================
