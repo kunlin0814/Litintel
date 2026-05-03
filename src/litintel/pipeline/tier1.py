@@ -299,7 +299,8 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
             
     # Drive Sync (if enabled)
     if config.storage.drive and config.storage.drive.enabled:
-        drive_folder = os.environ.get("GOOGLE_DRIVE_FOLDER_ID")
+        folder_env = config.storage.drive.folder_id_env or "GOOGLE_DRIVE_FOLDER_ID"
+        drive_folder = os.environ.get(folder_env)
         creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
         
         if drive_folder:
