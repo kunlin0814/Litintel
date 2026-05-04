@@ -132,6 +132,9 @@ storage:
   drive:
     enabled: true
     folder_id_env: "GOOGLE_DRIVE_FOLDER_ID_PLASTICITY"
+    upload_pdfs: true
+    pdf_min_score: 88
+    pdf_folder_name: "PDFs"
   csv:
     enabled: true
     filename: "papers_tier1_plasticity.csv"
