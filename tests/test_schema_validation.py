@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src'
 
 from litintel.config import DriveConfig
 from litintel.enrich.schema import Tier2Record
-from litintel.pubmed.client import fetch_pmc_pdf_url
+from litintel.pubmed.client import fetch_pmc_pdf_url, fetch_pmc_pdf
 
 
 class MockResponse:
@@ -130,6 +130,34 @@ def test_fetch_pmc_pdf_url_returns_none_when_no_pdf(monkeypatch):
     monkeypatch.setattr("litintel.pubmed.client.requests.get", mock_get)
 
     assert fetch_pmc_pdf_url("PMC123") is None
+
+
+def test_fetch_pmc_pdf_tries_deprecated_fallback(monkeypatch):
+    oa_xml = """
+    <OA>
+      <records returned-count="1" total-count="1">
+        <record id="PMC123">
+          <link format="pdf" href="ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_pdf/a/test.PMC123.pdf"/>
+        </record>
+      </records>
+    </OA>
+    """
+    calls = []
+
+    def mock_get(url, params=None, headers=None, timeout=30):
+        calls.append(url)
+        if "oa.fcgi" in url:
+            return MockResponse(oa_xml)
+        if "/deprecated/" in url:
+            return MockResponse("", content=b"%PDF test")
+        raise RuntimeError("legacy path unavailable")
+
+    monkeypatch.setattr("litintel.pubmed.client.requests.get", mock_get)
+
+    pdf = fetch_pmc_pdf("PMC123")
+
+    assert pdf == b"%PDF test"
+    assert any("/deprecated/" in url for url in calls)
 
 if __name__ == "__main__":
     unittest.main()

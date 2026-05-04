@@ -165,6 +165,16 @@ def _download_url_from_oa_href(href: str) -> str:
     return href
 
 
+def _pmc_pdf_download_urls(primary_url: str) -> List[str]:
+    """Return current and migration fallback URLs for a PMC OA PDF."""
+    urls = [primary_url]
+    legacy_prefix = "https://ftp.ncbi.nlm.nih.gov/pub/pmc/"
+    deprecated_prefix = "https://ftp.ncbi.nlm.nih.gov/pub/pmc/deprecated/"
+    if primary_url.startswith(legacy_prefix) and not primary_url.startswith(deprecated_prefix):
+        urls.append(primary_url.replace(legacy_prefix, deprecated_prefix, 1))
+    return urls
+
+
 def fetch_pmc_pdf_url(
     pmcid: str,
     timeout: int = 30,
@@ -235,14 +245,21 @@ def fetch_pmc_pdf(
 
     headers = {"User-Agent": f"LitIntel/0.1 ({email})"}
 
-    try:
-        resp = requests.get(pdf_url, headers=headers, timeout=timeout)
-        resp.raise_for_status()
-    except Exception as e:
-        logger.warning("Failed to download PMC PDF for %s: %s", normalized_pmcid, e)
+    content = b""
+    last_error = None
+    for candidate_url in _pmc_pdf_download_urls(pdf_url):
+        try:
+            resp = requests.get(candidate_url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            content = resp.content
+            break
+        except Exception as e:
+            last_error = e
+
+    if not content:
+        logger.warning("Failed to download PMC PDF for %s: %s", normalized_pmcid, last_error)
         return None
 
-    content = resp.content
     if not content.startswith(b"%PDF"):
         logger.warning("Downloaded content for %s is not a PDF", normalized_pmcid)
         return None

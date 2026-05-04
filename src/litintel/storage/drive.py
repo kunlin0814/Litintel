@@ -25,8 +25,9 @@ from litintel.pipeline.shared import normalize_text
 
 logger = logging.getLogger(__name__)
 
-# Define scopes
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+# Full Drive scope is required to append to older/manual Drive files and
+# folders by ID. drive.file can only see files created or opened by this app.
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
 def get_drive_service(credentials_path: Optional[str] = None):
@@ -63,11 +64,14 @@ def get_drive_service(credentials_path: Optional[str] = None):
     # 2. Try User OAuth Flow (Client Secrets)
     client_secrets = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRETS_PATH")
     if not creds and client_secrets and os.path.exists(client_secrets):
-        token_path = 'token.json'
+        token_path = 'token_drive.json'
         
         # Load cached token
         if os.path.exists(token_path):
             creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+            if not creds.has_scopes(SCOPES):
+                logger.info("Cached Drive token does not include required scopes; reauthorizing.")
+                creds = None
             
         # Refresh or Login
         if not creds or not creds.valid:
@@ -202,6 +206,7 @@ def upload_pmc_pdfs_to_drive(
     credentials_path: Optional[str] = None,
     min_score: int = 88,
     pdf_folder_name: str = "PDFs",
+    pdf_folder_id: Optional[str] = None,
 ) -> None:
     """
     Upload open-access PMC PDFs for high-scoring records to Google Drive.
@@ -215,6 +220,7 @@ def upload_pmc_pdfs_to_drive(
         credentials_path: Optional service account or OAuth credentials path.
         min_score: Minimum RelevanceScore required for PDF upload.
         pdf_folder_name: Name of the Drive subfolder for PDFs.
+        pdf_folder_id: Optional explicit Drive folder ID for PDFs.
     """
     candidates = [
         rec for rec in records
@@ -231,7 +237,7 @@ def upload_pmc_pdfs_to_drive(
         return
 
     try:
-        pdf_folder_id = ensure_folder_exists(service, pdf_folder_name, folder_id)
+        pdf_folder_id = pdf_folder_id or ensure_folder_exists(service, pdf_folder_name, folder_id)
     except Exception as e:
         logger.error(f"Failed to ensure PDF folder: {e}")
         return
@@ -360,7 +366,13 @@ def append_text_to_file(service, folder_id: str, file_name: str, new_text: str) 
         return file.get('id')
 
 
-def append_to_jsonl(service, folder_id: str, file_name: str, new_records: List[Dict[str, Any]]) -> str:
+def append_to_jsonl(
+    service,
+    folder_id: str,
+    file_name: str,
+    new_records: List[Dict[str, Any]],
+    file_id: Optional[str] = None,
+) -> str:
     """
     Append JSONL records to a file in Drive.
     
@@ -372,6 +384,7 @@ def append_to_jsonl(service, folder_id: str, file_name: str, new_records: List[D
         folder_id: Parent folder ID
         file_name: JSONL filename
         new_records: List of dict records to append
+        file_id: Optional explicit Drive file ID to update
         
     Returns:
         File ID
@@ -379,15 +392,22 @@ def append_to_jsonl(service, folder_id: str, file_name: str, new_records: List[D
     if not new_records:
         return ""
     
-    query = f"name = '{file_name}' and '{folder_id}' in parents and trashed = false"
-    results = service.files().list(q=query, fields="files(id)", includeItemsFromAllDrives=True, supportsAllDrives=True).execute()
-    files = results.get('files', [])
+    files = []
+    if not file_id:
+        query = f"name = '{file_name}' and '{folder_id}' in parents and trashed = false"
+        results = service.files().list(
+            q=query,
+            fields="files(id)",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+        ).execute()
+        files = results.get('files', [])
     
     existing_content = ""
-    file_id = None
     
-    if files:
-        file_id = files[0]['id']
+    if file_id or files:
+        if not file_id:
+            file_id = files[0]['id']
         # Download existing
         request = service.files().get_media(fileId=file_id)
         fh = io.BytesIO()
@@ -711,7 +731,14 @@ def update_methods_index(
         logger.error(f"Failed to update methods index: {e}")
 
 
-def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_path: Optional[str] = None) -> None:
+def sync_to_drive(
+    records: List[Dict[str, Any]],
+    folder_id: str,
+    credentials_path: Optional[str] = None,
+    papers_jsonl_file_id: Optional[str] = None,
+    notebooklm_folder_id: Optional[str] = None,
+    methods_folder_id: Optional[str] = None,
+) -> None:
     """
     Sync records to Google Drive with batched markdown + JSONL strategy.
     
@@ -724,6 +751,9 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
         records: List of enriched records
         folder_id: Root Drive folder ID
         credentials_path: Optional service account credentials path
+        papers_jsonl_file_id: Optional explicit Drive file ID for papers.jsonl
+        notebooklm_folder_id: Optional explicit Drive folder ID for markdown corpus
+        methods_folder_id: Optional explicit Drive folder ID for methods outputs
     """
     if not records:
         logger.info("No records to sync")
@@ -737,14 +767,24 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
     
     # 1. JSONL Export (All records)
     try:
-        append_to_jsonl(service, folder_id, "papers.jsonl", records)
+        append_to_jsonl(
+            service,
+            folder_id,
+            "papers.jsonl",
+            records,
+            file_id=papers_jsonl_file_id,
+        )
         logger.info(f"Appended {len(records)} records to papers.jsonl")
     except Exception as e:
         logger.error(f"Failed to update papers.jsonl: {e}")
     
     # 2. Markdown Export (Thematic buckets)
     try:
-        corpus_folder_id = ensure_folder_exists(service, "NotebookLM_Corpus", folder_id)
+        corpus_folder_id = notebooklm_folder_id or ensure_folder_exists(
+            service,
+            "NotebookLM_Corpus",
+            folder_id,
+        )
     except Exception as e:
         logger.error(f"Failed to ensure corpus folder: {e}")
         return
@@ -805,7 +845,11 @@ def sync_to_drive(records: List[Dict[str, Any]], folder_id: str, credentials_pat
     if fulltext_records:
         try:
             # Ensure Computational_Methods folder exists
-            methods_folder_id = ensure_folder_exists(service, "Computational_Methods", corpus_folder_id)
+            methods_folder_id = methods_folder_id or ensure_folder_exists(
+                service,
+                "Computational_Methods",
+                corpus_folder_id,
+            )
             
             # Build quarterly filename
             comp_methods_filename = f"CompMethods_{year}_Q{quarter}.md"

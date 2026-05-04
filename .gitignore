@@ -23,6 +23,7 @@ ore
 # OAuth Credentials
 client_secret.json
 token.json
+token_drive.json
 secrets_key/
 
 # Generated Reports

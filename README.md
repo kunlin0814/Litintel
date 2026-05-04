@@ -47,9 +47,20 @@ NOTION_DB_ID=xxx
 OPENAI_API_KEY=sk-proj-xxx
 # OR: GOOGLE_API_KEY=xxx
 
-# Google Drive (optional)
+# Google Drive (optional; personal Drive uses OAuth)
+GOOGLE_DRIVE_CLIENT_SECRET=/path/to/oauth-client-secret.json
 GOOGLE_DRIVE_FOLDER_ID=xxx
-GOOGLE_CREDENTIALS_PATH=/path/to/service-account.json
+
+# Optional but recommended: pin exact existing Drive targets to avoid duplicates
+GOOGLE_DRIVE_PAPERS_JSONL_FILE_ID=xxx
+GOOGLE_DRIVE_NOTEBOOKLM_FOLDER_ID=xxx
+GOOGLE_DRIVE_COMP_METHODS_FOLDER_ID=xxx
+GOOGLE_DRIVE_PDF_FOLDER_ID=xxx
+
+# GCP / Vertex / RAG (separate from personal Drive OAuth)
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GCP_PROJECT_ID=your-gcp-project
+VERTEX_RAG_CORPUS_NAME=projects/.../locations/.../ragCorpora/...
 ```
 
 ### 3. Run
@@ -64,6 +75,46 @@ python -m litintel.cli tier2
 # Validate a config file
 python -m litintel.cli validate configs/tier1_pca.yaml
 ```
+
+---
+
+## Google Auth Notes
+
+LitIntel intentionally separates **GCP auth** from **personal Google Drive
+auth**:
+
+- `GOOGLE_APPLICATION_CREDENTIALS` / ADC is for Vertex AI, Gemini-on-GCP, and
+  Vertex RAG.
+- `GOOGLE_DRIVE_CLIENT_SECRET` plus the local `token_drive.json` OAuth cache is
+  for writing to a personal Google Drive folder.
+
+Do not assume a company GCP credential can write to personal Drive. Even when a
+Drive folder is shared with a service account, the Drive API credential also
+needs a Drive-capable scope. The current Drive sync uses full Drive OAuth scope
+so it can append to existing/manual files by ID.
+
+Reauthorize Drive only when needed:
+
+- `token_drive.json` is missing or deleted.
+- You switch Google accounts.
+- Google access was revoked.
+- Drive returns `File not found` for a file/folder you can open in the browser.
+- The pipeline creates duplicate `NotebookLM_Corpus`, `PDFs`, or `papers.jsonl`
+  instead of appending.
+
+To avoid duplicate Drive outputs, set exact IDs in `.env`:
+
+```env
+GOOGLE_DRIVE_FOLDER_ID="root-folder-id"
+GOOGLE_DRIVE_PAPERS_JSONL_FILE_ID="papers-jsonl-file-id"
+GOOGLE_DRIVE_NOTEBOOKLM_FOLDER_ID="notebooklm-folder-id"
+GOOGLE_DRIVE_COMP_METHODS_FOLDER_ID="computational-methods-folder-id"
+GOOGLE_DRIVE_PDF_FOLDER_ID="pdf-folder-id"
+```
+
+If these exact IDs are set, LitIntel updates those targets directly instead of
+searching by name. See [docs/google_drive_setup.md](docs/google_drive_setup.md)
+for details.
 
 ---
 

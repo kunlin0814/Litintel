@@ -70,9 +70,13 @@ storage:
     database_id_env: "NOTION_DB_ID"
   drive:
     enabled: true
+    papers_jsonl_file_id_env: "GOOGLE_DRIVE_PAPERS_JSONL_FILE_ID"
+    notebooklm_folder_id_env: "GOOGLE_DRIVE_NOTEBOOKLM_FOLDER_ID"
+    methods_folder_id_env: "GOOGLE_DRIVE_COMP_METHODS_FOLDER_ID"
     upload_pdfs: true
     pdf_min_score: 88
     pdf_folder_name: "PDFs"
+    pdf_folder_id_env: "GOOGLE_DRIVE_PDF_FOLDER_ID"
   csv:
     enabled: true
     filename: "papers_tier1.csv"

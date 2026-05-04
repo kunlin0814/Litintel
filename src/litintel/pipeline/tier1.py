@@ -292,6 +292,9 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
                     credentials_path=creds_path,
                     min_score=config.storage.drive.pdf_min_score,
                     pdf_folder_name=config.storage.drive.pdf_folder_name,
+                    pdf_folder_id=os.environ.get(
+                        config.storage.drive.pdf_folder_id_env or ""
+                    ),
                 )
             except Exception as e:
                 logger.error(f"Drive PDF upload failed: {e}")
@@ -328,7 +331,20 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
             try:
                 from litintel.storage.drive import sync_to_drive
                 logger.info("Syncing to Google Drive...")
-                sync_to_drive(valid_records, drive_folder, creds_path)
+                sync_to_drive(
+                    valid_records,
+                    drive_folder,
+                    creds_path,
+                    papers_jsonl_file_id=os.environ.get(
+                        config.storage.drive.papers_jsonl_file_id_env or ""
+                    ),
+                    notebooklm_folder_id=os.environ.get(
+                        config.storage.drive.notebooklm_folder_id_env or ""
+                    ),
+                    methods_folder_id=os.environ.get(
+                        config.storage.drive.methods_folder_id_env or ""
+                    ),
+                )
             except Exception as e:
                 logger.error(f"Drive sync failed: {e}")
         else:
