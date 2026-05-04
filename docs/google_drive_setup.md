@@ -67,6 +67,16 @@ The Drive sync uses full Drive OAuth scope because narrower `drive.file` scope
 cannot reliably see older/manual folders and files. Exact IDs in `.env` are
 preferred over name search for stable appends.
 
+Use the dedicated auth helper instead of running the full pipeline just to
+refresh auth:
+
+```bash
+venv/bin/python scripts/auth/auth_google_drive.py
+
+# Optional: verify write access by appending one small test line
+venv/bin/python scripts/auth/auth_google_drive.py --write-smoke
+```
+
 ---
 
 ## Output Structure

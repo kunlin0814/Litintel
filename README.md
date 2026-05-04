@@ -102,6 +102,15 @@ Reauthorize Drive only when needed:
 - The pipeline creates duplicate `NotebookLM_Corpus`, `PDFs`, or `papers.jsonl`
   instead of appending.
 
+Use the dedicated auth helper:
+
+```bash
+venv/bin/python scripts/auth/auth_google_drive.py
+
+# Optional: also write a tiny smoke-test file to Drive
+venv/bin/python scripts/auth/auth_google_drive.py --write-smoke
+```
+
 To avoid duplicate Drive outputs, set exact IDs in `.env`:
 
 ```env
