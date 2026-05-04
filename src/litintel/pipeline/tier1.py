@@ -272,6 +272,31 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
 
     # 5. Output
     valid_records = [r for r in enriched_records if r.get("PipelineConfidence") != "Error"]
+
+    drive_folder = None
+    creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+    if config.storage.drive and config.storage.drive.enabled:
+        folder_env = config.storage.drive.folder_id_env or "GOOGLE_DRIVE_FOLDER_ID"
+        drive_folder = os.environ.get(folder_env)
+
+        if drive_folder and config.storage.drive.upload_pdfs:
+            try:
+                from litintel.storage.drive import upload_pmc_pdfs_to_drive
+                logger.info(
+                    "Uploading PMC PDFs to Google Drive for score >= %s...",
+                    config.storage.drive.pdf_min_score,
+                )
+                upload_pmc_pdfs_to_drive(
+                    records=valid_records,
+                    folder_id=drive_folder,
+                    credentials_path=creds_path,
+                    min_score=config.storage.drive.pdf_min_score,
+                    pdf_folder_name=config.storage.drive.pdf_folder_name,
+                )
+            except Exception as e:
+                logger.error(f"Drive PDF upload failed: {e}")
+        elif config.storage.drive.upload_pdfs:
+            logger.warning("Drive folder env var not set, skipping PDF upload")
     
     if config.storage.csv and config.storage.csv.enabled:
         save_csv(valid_records, config.storage.csv.filename)
@@ -299,10 +324,6 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
             
     # Drive Sync (if enabled)
     if config.storage.drive and config.storage.drive.enabled:
-        folder_env = config.storage.drive.folder_id_env or "GOOGLE_DRIVE_FOLDER_ID"
-        drive_folder = os.environ.get(folder_env)
-        creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
-        
         if drive_folder:
             try:
                 from litintel.storage.drive import sync_to_drive

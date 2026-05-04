@@ -68,6 +68,9 @@ class DriveConfig(BaseModel):
     enabled: bool = False
     folder_id_env: Optional[str] = None
     markdown_grouping: Optional[str] = None
+    upload_pdfs: bool = False
+    pdf_min_score: int = 88
+    pdf_folder_name: str = "PDFs"
 
 class MarkdownBundleConfig(BaseModel):
     enabled: bool = False

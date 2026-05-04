@@ -10,6 +10,7 @@ import json
 import datetime
 import logging
 import math
+import time
 from typing import Optional, List, Dict, Any
 
 from google.oauth2.credentials import Credentials
@@ -122,6 +123,167 @@ def ensure_folder_exists(service, folder_name: str, parent_id: str) -> str:
         }
         file = service.files().create(body=file_metadata, fields='id', supportsAllDrives=True).execute()
         return file.get('id')
+
+
+def _safe_filename_part(text: str, max_len: int = 80) -> str:
+    """Create a Drive-safe filename segment from title-like text."""
+    clean = normalize_text(text or "")
+    chars = []
+    for char in clean:
+        if char.isalnum():
+            chars.append(char)
+        elif char in (" ", "-", "_"):
+            chars.append("_")
+    collapsed = "_".join(part for part in "".join(chars).split("_") if part)
+    return collapsed[:max_len].strip("_") or "untitled"
+
+
+def upload_binary_file(
+    service,
+    folder_id: str,
+    file_name: str,
+    content: bytes,
+    mimetype: str,
+) -> str:
+    """
+    Create or update a binary file in Drive and return its web view link.
+
+    Args:
+        service: Drive service.
+        folder_id: Parent folder ID.
+        file_name: Drive filename.
+        content: Raw file content.
+        mimetype: MIME type for upload.
+
+    Returns:
+        Drive web view link, or file ID if no web link is returned.
+    """
+    query = f"name = '{file_name}' and '{folder_id}' in parents and trashed = false"
+    results = service.files().list(
+        q=query,
+        fields="files(id)",
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True,
+    ).execute()
+    files = results.get('files', [])
+
+    media = MediaIoBaseUpload(
+        io.BytesIO(content),
+        mimetype=mimetype,
+        resumable=True,
+    )
+
+    if files:
+        file = service.files().update(
+            fileId=files[0]['id'],
+            media_body=media,
+            fields='id, webViewLink',
+            supportsAllDrives=True,
+        ).execute()
+    else:
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id],
+            'mimeType': mimetype,
+        }
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, webViewLink',
+            supportsAllDrives=True,
+        ).execute()
+
+    return file.get('webViewLink', file.get('id', ''))
+
+
+def upload_pmc_pdfs_to_drive(
+    records: List[Dict[str, Any]],
+    folder_id: str,
+    credentials_path: Optional[str] = None,
+    min_score: int = 88,
+    pdf_folder_name: str = "PDFs",
+) -> None:
+    """
+    Upload open-access PMC PDFs for high-scoring records to Google Drive.
+
+    Mutates records in place with PDF_DriveLink, PDF_Source, and PDF_Status.
+    Only records with PMCID and RelevanceScore >= min_score are considered.
+
+    Args:
+        records: Enriched Tier 1 records.
+        folder_id: Root Drive folder ID.
+        credentials_path: Optional service account or OAuth credentials path.
+        min_score: Minimum RelevanceScore required for PDF upload.
+        pdf_folder_name: Name of the Drive subfolder for PDFs.
+    """
+    candidates = [
+        rec for rec in records
+        if rec.get("PMCID") and int(rec.get("RelevanceScore", 0) or 0) >= min_score
+    ]
+    if not candidates:
+        logger.info("No records meet PMC PDF upload criteria")
+        return
+
+    try:
+        service = get_drive_service(credentials_path)
+    except Exception as e:
+        logger.error(f"Failed to authenticate with Google Drive for PDF upload: {e}")
+        return
+
+    try:
+        pdf_folder_id = ensure_folder_exists(service, pdf_folder_name, folder_id)
+    except Exception as e:
+        logger.error(f"Failed to ensure PDF folder: {e}")
+        return
+
+    from litintel.pubmed.client import fetch_pmc_pdf
+
+    uploaded = 0
+    unavailable = 0
+    errors = 0
+
+    for rec in candidates:
+        pmid = str(rec.get("PMID") or "").strip()
+        pmcid = str(rec.get("PMCID") or "").strip()
+        title_slug = _safe_filename_part(rec.get("Title", ""))
+        file_prefix = pmid or pmcid
+        file_name = f"{file_prefix}_{title_slug}.pdf"
+
+        pdf_content = fetch_pmc_pdf(pmcid)
+        if not pdf_content:
+            rec["PDF_Status"] = "Unavailable"
+            rec["PDF_Source"] = "PMC_OA"
+            unavailable += 1
+            time.sleep(0.34)
+            continue
+
+        try:
+            link = upload_binary_file(
+                service=service,
+                folder_id=pdf_folder_id,
+                file_name=file_name,
+                content=pdf_content,
+                mimetype="application/pdf",
+            )
+            rec["PDF_DriveLink"] = link
+            rec["PDF_Source"] = "PMC_OA"
+            rec["PDF_Status"] = "Uploaded"
+            uploaded += 1
+            logger.info("Uploaded PMC PDF for PMID %s (%s)", pmid or "unknown", pmcid)
+        except Exception as e:
+            rec["PDF_Status"] = "Error"
+            rec["PDF_Source"] = "PMC_OA"
+            errors += 1
+            logger.error("Failed to upload PMC PDF for %s: %s", pmcid, e)
+
+        time.sleep(0.34)
+
+    logger.info(
+        "PMC PDF upload complete: %d uploaded, %d unavailable, %d errors",
+        uploaded,
+        unavailable,
+        errors,
+    )
 
 
 def append_text_to_file(service, folder_id: str, file_name: str, new_text: str) -> str:
@@ -293,6 +455,8 @@ def format_markdown_entry(rec: Dict[str, Any]) -> str:
     lines.append(f"**Title**: {normalize_text(rec.get('Title', 'Untitled'))}")
     lines.append(f"**Authors**: {normalize_text(rec.get('Authors', ''))}")
     lines.append(f"**Published**: {rec.get('PubDate', rec.get('Year', 'N/A'))}")
+    if rec.get("PDF_DriveLink"):
+        lines.append(f"**PDF**: {rec.get('PDF_DriveLink')}")
     lines.append(f"**Group**: {normalize_text(rec.get('Group', ''))}")
     lines.append(f"**RelevanceScore**: {rec.get('RelevanceScore')}")
     lines.append("")

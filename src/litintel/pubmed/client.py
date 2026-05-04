@@ -1,12 +1,13 @@
 import time
 import logging
 import requests
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
 
 def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: int = 0, email: str = "agent@deepmind.com") -> List[str]:
     # eSearch
@@ -143,3 +144,107 @@ def fetch_pmc_fulltext(pmcids: List[str], email: str = "agent@deepmind.com", bat
             time.sleep(0.34)
     
     return results
+
+
+def _normalize_pmcid(pmcid: str) -> str:
+    """Normalize a PMCID to the PMC-prefixed form used by NCBI services."""
+    clean = str(pmcid or "").strip()
+    if not clean:
+        return ""
+    if clean.upper().startswith("PMC"):
+        return "PMC" + clean[3:]
+    return f"PMC{clean}"
+
+
+def _download_url_from_oa_href(href: str) -> str:
+    """Convert PMC OA FTP links to HTTPS so requests can download them."""
+    if href.startswith("ftp://ftp.ncbi.nlm.nih.gov/"):
+        return "https://ftp.ncbi.nlm.nih.gov/" + href.removeprefix(
+            "ftp://ftp.ncbi.nlm.nih.gov/"
+        )
+    return href
+
+
+def fetch_pmc_pdf_url(
+    pmcid: str,
+    timeout: int = 30,
+) -> Optional[str]:
+    """
+    Resolve an open-access PMC PDF URL for a PMCID.
+
+    Uses the official PMC OA Web Service. Only papers in the PMC Open Access
+    Subset with a PDF resource will return a URL.
+
+    Args:
+        pmcid: PMCID with or without the "PMC" prefix.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Downloadable HTTPS URL, or None if no OA PDF is available.
+    """
+    normalized_pmcid = _normalize_pmcid(pmcid)
+    if not normalized_pmcid:
+        return None
+
+    params = {"id": normalized_pmcid, "format": "pdf"}
+
+    try:
+        resp = requests.get(PMC_OA_URL, params=params, timeout=timeout)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+    except Exception as e:
+        logger.warning("Failed to resolve PMC PDF URL for %s: %s", normalized_pmcid, e)
+        return None
+
+    error = root.find(".//error")
+    if error is not None:
+        logger.info("No PMC OA PDF for %s: %s", normalized_pmcid, error.text or "")
+        return None
+
+    for link in root.findall(".//link"):
+        if link.attrib.get("format", "").lower() != "pdf":
+            continue
+        href = link.attrib.get("href", "").strip()
+        if href:
+            return _download_url_from_oa_href(href)
+
+    logger.info("No PMC OA PDF link found for %s", normalized_pmcid)
+    return None
+
+
+def fetch_pmc_pdf(
+    pmcid: str,
+    email: str = "agent@deepmind.com",
+    timeout: int = 120,
+) -> Optional[bytes]:
+    """
+    Download an open-access PMC PDF for a PMCID.
+
+    Args:
+        pmcid: PMCID with or without the "PMC" prefix.
+        email: Contact email included in the user agent.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Raw PDF bytes, or None if unavailable or invalid.
+    """
+    normalized_pmcid = _normalize_pmcid(pmcid)
+    pdf_url = fetch_pmc_pdf_url(normalized_pmcid)
+    if not pdf_url:
+        return None
+
+    headers = {"User-Agent": f"LitIntel/0.1 ({email})"}
+
+    try:
+        resp = requests.get(pdf_url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+    except Exception as e:
+        logger.warning("Failed to download PMC PDF for %s: %s", normalized_pmcid, e)
+        return None
+
+    content = resp.content
+    if not content.startswith(b"%PDF"):
+        logger.warning("Downloaded content for %s is not a PDF", normalized_pmcid)
+        return None
+
+    return content
