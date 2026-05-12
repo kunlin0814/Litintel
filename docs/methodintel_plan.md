@@ -4,6 +4,28 @@
 **Date:** 2026-05-11  
 **Context:** Build a method-decision assistant inside the LitIntel repo without mixing it into the existing paper-triage pipelines.
 
+## Vocabulary
+
+These distinctions are load-bearing for the schema. They are written here once
+so every downstream document uses the same words.
+
+- **Method / algorithm**: a procedure independent of any package -- Louvain,
+  Leiden, SLM, Wilcoxon, edgeR-style negative-binomial dispersion modeling.
+- **Implementation / package**: a piece of software that exposes one or more
+  methods -- ArchR, Seurat, Scanpy, SnapATAC2. An implementation may expose
+  several methods (Seurat `FindClusters(algorithm=)` covers Louvain, Leiden,
+  SLM, Leiden-refined) and may call other packages under the hood.
+- **Stack / ecosystem**: the set of implementations a project commits to --
+  e.g. "ArchR-centered scATAC pipeline" implies fragment files, Arrow
+  storage, ArchR-style peak sets, and ArchR-callable methods.
+- **Dossier**: a structured comparison artifact for one decision question --
+  e.g. "Stage 5 clustering: ArchR Louvain vs ArchR Leiden vs SnapATAC2
+  transplant".
+- **Decision** = method choice + implementation choice + ecosystem fit +
+  validation burden. A dossier MUST keep these four axes separable. A
+  recommendation that confuses "Leiden is better" with "SnapATAC2 is
+  better" is a failure mode this system exists to prevent.
+
 ## Purpose
 
 MethodIntel is a decision-support layer for single-cell and spatial omics methods. It should help answer questions like:
