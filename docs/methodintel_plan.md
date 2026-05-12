@@ -292,10 +292,14 @@ Notion export comes after local output is useful.
 
 ### Phase 0 - Design Contract
 
-- [ ] Keep this plan as the working contract.
-- [ ] Confirm MethodIntel stays inside the LitIntel repo for v1.
-- [ ] Confirm Stage 5 clustering is the first MVP.
-- [ ] Decide whether Notion pages are manual inputs for v1 or fetched automatically.
+- [x] Keep this plan as the working contract.
+- [x] Confirm MethodIntel stays inside the LitIntel repo for v1.
+- [x] Confirm Stage 5 clustering is the first MVP.
+- [x] Notion direction for v1: **manual-input only**. The user pastes or
+      provides a Markdown export of the existing Notion Stage 5 page as
+      the dossier's source-of-context. Automatic Notion fetch is deferred
+      to Phase 5; the Notion client in this repo stays write-only until
+      then.
 
 ### Phase 1 - Schema Draft
 
