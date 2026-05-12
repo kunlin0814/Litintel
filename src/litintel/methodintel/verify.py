@@ -28,7 +28,8 @@ def verify_evidence_claims(claims: Iterable[EvidenceClaim]) -> List[EvidenceClai
 
     PMID claims are batched into a single `fetch_details` call and each
     PMID is checked against the returned XML body. Non-PMID claims are
-    not verified here and retain `verified=None`.
+    not verified here and retain `verified=None`. Input claims are never
+    mutated; every returned object is a fresh copy.
     """
     claims_list = list(claims)
     pmid_indexes = [
@@ -36,6 +37,7 @@ def verify_evidence_claims(claims: Iterable[EvidenceClaim]) -> List[EvidenceClai
         if claim.source_ref.kind == SourceRefKind.PMID
     ]
 
+    # No PMID claims present (includes the empty-list case) -- nothing to fetch.
     if not pmid_indexes:
         return [claim.model_copy() for claim in claims_list]
 
