@@ -223,34 +223,31 @@ For v1, the graph can be stored as structured JSON/YAML plus Markdown links. A v
 
 ## Method Lifecycle and Staleness
 
-MethodIntel should track whether a method is current, legacy, replaced, or context-specific. This matters because methods can stay familiar long after the field moves on.
+MethodIntel should track whether a method is current, under review, or
+legacy. This matters because methods can stay familiar long after the
+field moves on (e.g. Cufflinks for RNA-seq quantification).
 
-Example motivation:
+### v1 (thin)
 
-- Cufflinks may be remembered as a standard RNA-seq tool from an earlier training period, but current practice may favor other quantification and differential-expression workflows depending on the question. MethodIntel should make that shift visible instead of assuming the user's training-era default is still current.
+Each `MethodOption` carries:
 
-Each `MethodNode` should eventually include:
+- `lifecycle_status`: one of `{current, under_review, legacy}`.
+- `last_reviewed`: ISO date the status was last confirmed.
+- `successor_methods`: list of canonical method names that have
+  largely replaced this method.
 
-- `lifecycle_status`: emerging, current_default, established_alternative, legacy, deprecated, context_specific
-- `last_reviewed`
-- `replacement_or_successor_methods`
-- `current_common_use`
-- `historical_common_use`
-- `staleness_signals`
-- `still_valid_when`
+Assignment rule for v1: lifecycle status is **user-confirmed**, not
+LLM-inferred. The LLM may propose a status with rationale, but the
+final value in the persisted JSON is whatever the human reviewer
+accepts during the Phase 4 review pass. This prevents training-era
+defaults from masquerading as authoritative lifecycle data.
 
-Possible staleness signals:
+### Phase 4.5 (deferred)
 
-- newer benchmark papers no longer include the method
-- package repository is archived or minimally maintained
-- documentation recommends another method
-- recent workflows use a successor method
-- GitHub issues show unresolved compatibility problems
-- method is still valid for a narrow legacy or reproducibility context
-
-Design rule:
-
-> MethodIntel should not only ask "what does this method do?" It should also ask "is this still a reasonable default today, and if not, when is it still acceptable?"
+Expand to the six-tier enum (`emerging`, `current_default`,
+`established_alternative`, `legacy`, `deprecated`, `context_specific`)
+plus the staleness-signal fields, only after the v1 enum proves too
+coarse for at least two real dossiers.
 
 ## Expected Outputs
 
@@ -277,6 +274,21 @@ output/methodintel/stage5_clustering.md
 ```
 
 Notion export comes after local output is useful.
+
+## Cost and Cache Budget
+
+MethodIntel hits Gemini Pro/Flash plus PubMed retrieval per dossier.
+The MVP cadence is one dossier at a time, human-reviewed, so the
+budget is small but should be explicit.
+
+- Per dossier build: target <= 50k input tokens + <= 10k output tokens
+  to Gemini, plus <= 20 PubMed `efetch` calls (batched).
+- PubMed responses cached on disk keyed by PMID for 30 days. Cache
+  invalidation on demand only -- no background refresh in v1.
+- Source-plan dry-run mode (no LLM, no retrieval) is free and is the
+  default before a paid build.
+- Lifecycle re-checks reuse the same dossier path; the only delta is
+  re-running `verify_evidence_claims()` against the existing JSON.
 
 ## Phased Action Items
 
@@ -369,8 +381,34 @@ Tasks:
 
 ### Phase 3 - Local Dossier Builder
 
-- [ ] Add `src/litintel/methodintel/build_dossier.py`.
+The builder is **retrieval-then-synthesize**, not a single end-to-end LLM
+call. This pattern is the structural defense against the failure mode
+this system exists to prevent (LLM-generated dossiers with fabricated
+benchmark numbers).
+
+Pipeline:
+
+```
+config -> router_decision (already routed for Stage 5)
+       -> source_planner -> SourceTask[]
+       -> retrieve (PubMed / Notion file / docs / github metadata)
+       -> assemble context bundle
+       -> LLM synthesize -> MethodDecisionDossier JSON
+       -> verify_evidence_claims (PubMed resolution for PMID refs)
+       -> write JSON + Markdown
+```
+
+Tasks:
+
+- [ ] Add `src/litintel/methodintel/build_dossier.py` implementing the
+      pipeline above.
 - [ ] Add prompt template in `src/litintel/methodintel/prompts.py`.
+- [ ] Prompt MUST require every claim in the LLM output to carry a
+      `source_ref` matching one of the retrieved sources.
+- [ ] Run `verify_evidence_claims()` after parsing the LLM JSON. Claims
+      that fail PMID resolution are kept in the dossier but flagged
+      `verified=False`; the Markdown renderer surfaces them in a
+      "Claims requiring follow-up" block.
 - [ ] Generate JSON and Markdown outputs from the config.
 - [ ] Do not write to Notion yet.
 
