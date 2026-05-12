@@ -1,6 +1,6 @@
 from datetime import date as _date
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import ClassVar, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -164,7 +164,7 @@ class MethodGraphEdge(BaseModel):
     edge_type: str
     evidence_ref: Optional[SourceRef] = None
 
-    ALLOWED_EDGE_TYPES: frozenset = frozenset({
+    ALLOWED_EDGE_TYPES: ClassVar[frozenset[str]] = frozenset({
         "competes_with",
         "replaces_or_modernizes",
         "implements",
