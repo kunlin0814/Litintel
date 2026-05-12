@@ -137,13 +137,14 @@ Ask only when the answer changes the source plan or recommendation.
 
 ## Implementation TODO
 
-### Phase A - Static Router
+### Phase A - Static Router (implemented 2026-05-11)
 
-- [ ] Create `src/litintel/methodintel/router.py`.
-- [ ] Implement rule-based routing for the five MVP modes.
-- [ ] Add `RouterDecision` Pydantic model.
-- [ ] Add tests with example user questions.
-- [ ] Return `missing_constraints` instead of asking interactively at first.
+- [x] Create `src/litintel/methodintel/router.py`.
+- [x] Implement rule-based routing for the five MVP modes.
+- [x] Add `RouterDecision` Pydantic model (`src/litintel/methodintel/schema.py`).
+- [x] Add tests with example user questions (`tests/test_methodintel_router.py`,
+      6 cases covering all five modes plus implementation-only routing).
+- [x] Return `missing_constraints` instead of asking interactively at first.
 
 ### Phase B - Config Integration
 
