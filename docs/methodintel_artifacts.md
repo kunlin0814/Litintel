@@ -4,6 +4,11 @@
 **Date:** 2026-05-11  
 **Purpose:** Define how a user controls MethodIntel and what artifacts it should return.
 
+> **Cross-references:** Mode taxonomy is defined canonically in
+> [`methodintel_plan.md` Entry Modes](methodintel_plan.md#entry-modes).
+> Vocabulary (method vs implementation vs stack) lives in
+> [`methodintel_plan.md` Vocabulary](methodintel_plan.md#vocabulary).
+
 ## Core Idea
 
 MethodIntel should behave like guided research, not like a broad search bot.

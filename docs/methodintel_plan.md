@@ -125,85 +125,32 @@ This is the practical value of MethodIntel: not just "what does the method do?",
 
 ## Entry Modes
 
-MethodIntel should support three entry modes. The user should not need to know the exact method name or even the pipeline stage before using the tool.
+MethodIntel supports **five internal modes**, matching the router
+implementation in `src/litintel/methodintel/router.py` and the artifact
+spec in `methodintel_artifacts.md`.
 
-### 1. Method-first
+| Internal mode         | Artifact                       | User-facing mental model |
+|-----------------------|--------------------------------|---------------------------|
+| `learn_method`        | method card                    | method-first              |
+| `compare_methods`     | decision dossier               | method-first or stage-first |
+| `choose_for_dataset`  | context-specific recommendation| problem-first             |
+| `stage_overview`      | stage map                      | stage-first               |
+| `staleness_check`     | lifecycle report               | method-first (legacy lens)|
 
-Example query:
+The three user-facing entry styles ("method-first", "stage-first",
+"problem-first") are a *prompting affordance* -- they shape how the user
+starts a question. The five internal modes are how the router and source
+planner reason about the question after classification. Do not introduce
+a fourth user-facing style or a sixth internal mode without revising this
+table, `router.py::RouterMode`, and the artifacts doc together.
 
-```text
-What is Louvain clustering?
-```
+### Design rule
 
-Expected output:
-
-- method intuition
-- common bioinformatics usage
-- main implementations
-- benchmarks and evidence
-- strengths, weaknesses, and failure modes
-- related alternatives, such as Leiden or SLM
-
-Main risk:
-
-- unknown-unknown problem. The user may learn Louvain deeply but never discover that Leiden exists.
-
-Mitigation:
-
-- every method card must include related alternatives and the pipeline stages where those alternatives compete.
-
-### 2. Stage-first
-
-Example query:
-
-```text
-What are common clustering methods in scATAC?
-```
-
-Expected output:
-
-- what the stage does
-- when the stage appears in the pipeline
-- prerequisite and downstream stages
-- common method families
-- decision axes
-- links to method cards and decision dossiers
-
-Main risk:
-
-- shallow overview. The user may see many methods but not know which comparison axis matters.
-
-Mitigation:
-
-- every stage page must include practical decision axes, such as biological goal, data modality, replicate structure, scale, implementation stack, and downstream assumptions.
-
-### 3. Problem-first
-
-Example query:
-
-```text
-I have spatial ATAC and need to group cells or tixels. What step is this and what should I use?
-```
-
-Expected output:
-
-- identify the likely pipeline stage
-- explain why that stage exists
-- list relevant method families
-- recommend the next question to ask
-- route to a decision dossier if enough context is available
-
-Main risk:
-
-- the tool may over-infer from an underspecified biological question.
-
-Mitigation:
-
-- state assumptions explicitly and ask for only the missing high-impact constraints.
-
-Design rule:
-
-> MethodIntel must support method-first, stage-first, and problem-first queries. Method cards prevent shallow learning; stage pages prevent blind spots; problem-first routing helps when the user does not yet know the stage exists.
+> Method cards prevent shallow learning. Stage maps prevent blind spots.
+> Decision dossiers force concrete recommendations with trade-offs.
+> Context recommendations bridge "I have a dataset" to a routed dossier.
+> Lifecycle reports prevent training-era defaults from leaking into
+> current advice.
 
 ## Method Graph
 
