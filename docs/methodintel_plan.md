@@ -3,6 +3,7 @@
 **Status:** Draft  
 **Date:** 2026-05-11  
 **Context:** Build a method-decision assistant inside the LitIntel repo without mixing it into the existing paper-triage pipelines.
+**Last revised:** 2026-05-11 (post-review fixes from `docs/superpowers/plans/2026-05-11-methodintel-plan-revision.md`)
 
 ## Vocabulary
 
@@ -131,7 +132,15 @@ MethodIntel should capture reusable method-choice heuristics, but treat them as 
 Examples:
 
 - ArchR vs SnapATAC2: one tool may be more sensitive for broad cell typing, while another may better preserve sparse overlap structure or scale better. The dossier should state the biological regime where that claim applies, the trade-off, and the evidence level.
-- limma vs DESeq2 vs edgeR: method choice depends on sample size, replicate structure, count depth, dispersion modeling, and whether the analysis is bulk, pseudo-bulk, or cell-level. Sensitivity claims should be tied to a specific design, not generalized globally.
+- limma vs DESeq2 vs edgeR: choice depends on data type, replicate
+  structure, and dispersion modeling. For bulk RNA-seq, `limma-voom`,
+  `edgeR`, and `DESeq2` are all defensible defaults. For single-cell
+  pseudo-bulk DA/DE the practical ranking is roughly
+  `edgeR ~= DESeq2 > limma-voom`, because the count distribution at
+  small per-group replicate counts is better captured by NB-with-shrunk-
+  dispersion than by voom's mean-variance trend. Cell-level Wilcoxon is
+  useful only for cluster-marker discovery, not for replicated condition
+  testing.
 - Wilcoxon vs pseudo-bulk: Wilcoxon can be useful for cluster marker discovery, but replicated condition testing should usually move toward pseudo-bulk models.
 
 Each heuristic should include:

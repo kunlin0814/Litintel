@@ -3,6 +3,7 @@
 **Status:** Draft  
 **Date:** 2026-05-11  
 **Purpose:** Define how a user controls MethodIntel and what artifacts it should return.
+**Last revised:** 2026-05-11 (post-review fixes from `docs/superpowers/plans/2026-05-11-methodintel-plan-revision.md`)
 
 > **Cross-references:** Mode taxonomy is defined canonically in
 > [`methodintel_plan.md` Entry Modes](methodintel_plan.md#entry-modes).

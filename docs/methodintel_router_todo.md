@@ -3,6 +3,7 @@
 **Status:** Draft  
 **Date:** 2026-05-11  
 **Purpose:** Track decisions and implementation tasks for the MethodIntel router and source planner.
+**Last revised:** 2026-05-11 (post-review fixes from `docs/superpowers/plans/2026-05-11-methodintel-plan-revision.md`)
 
 ## Router Goal
 
@@ -53,8 +54,14 @@ source_plan:
   - original_papers
   - official_docs
 verify_items:
-  - Confirm ArchR/Seurat parameter support for current installed versions.
+  - claim: ArchR/Seurat parameter support for current installed versions.
+    why_uncertain: API drift between major releases.
+    resolution_method: Pin versions and re-run the dossier with version-stamped sources.
 ```
+
+> The router currently emits `verify_items` as a list of strings. Promoting
+> the field to a `list[VerifyItem]` Pydantic model with `{claim, why_uncertain,
+> resolution_method}` is a follow-up task tracked in Phase A.1 below.
 
 ## Source Planner
 
@@ -145,6 +152,13 @@ Ask only when the answer changes the source plan or recommendation.
 - [x] Add tests with example user questions (`tests/test_methodintel_router.py`,
       6 cases covering all five modes plus implementation-only routing).
 - [x] Return `missing_constraints` instead of asking interactively at first.
+
+### Phase A.1 - VerifyItem typing follow-up
+
+- [ ] Add `VerifyItem` Pydantic model to `src/litintel/methodintel/schema.py`.
+- [ ] Change `RouterDecision.verify_items` from `list[str]` to `list[VerifyItem]`.
+- [ ] Update `tests/test_methodintel_router.py` to assert the structured shape.
+- [ ] Keep a backward-compat helper that accepts plain strings during transition.
 
 ### Phase B - Config Integration
 
