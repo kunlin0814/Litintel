@@ -227,6 +227,8 @@ Decision: ArchR vs SnapATAC2 transplant
   -> sensitive_to: embedding/reference-frame consistency
 ```
 
+In this graph, ArchR and SnapATAC2 are implementation nodes, not method nodes. A decision can still compare "ArchR Louvain" with "SnapATAC2 Leiden", but that comparison should be represented as method plus implementation, not as a flat list of methods.
+
 For v1, the graph can be stored as structured JSON/YAML plus Markdown links. A visual plot can come later after the schema stabilizes.
 
 ## Method Lifecycle and Staleness

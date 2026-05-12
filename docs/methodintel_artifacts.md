@@ -45,6 +45,8 @@ stage: clustering
 methods:
   - Louvain
   - Leiden
+implementations:
+  - ArchR
 context:
   stack: ArchR
   modality: scATAC
@@ -58,6 +60,8 @@ If key context is missing, MethodIntel should ask only high-impact follow-up que
 - Are you staying inside ArchR?
 - Is the goal broad cell typing or substate/subclone biology?
 ```
+
+Important taxonomy: Louvain and Leiden are methods/algorithms. ArchR is an implementation stack/package that can expose or call clustering methods. MethodIntel should preserve that distinction because some questions compare algorithms inside one package, while other questions compare packages or cross-package transplants.
 
 ## Entry Modes and Artifacts
 

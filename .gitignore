@@ -3,7 +3,6 @@ __pycache__
 *.pyc
 .venv
 venv/
-tests/
 # Runtime generated files
 run_history.csv
 *.log

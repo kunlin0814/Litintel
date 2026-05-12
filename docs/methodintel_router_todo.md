@@ -37,6 +37,8 @@ stage: clustering
 methods:
   - Louvain
   - Leiden
+implementations:
+  - ArchR
 context:
   modality: scATAC
   platform: spatial ATAC
