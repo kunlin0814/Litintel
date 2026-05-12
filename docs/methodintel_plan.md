@@ -320,9 +320,52 @@ Notion export comes after local output is useful.
 
 ### Phase 2 - Stage 5 Config
 
-- [ ] Add `configs/methodintel_stage5_clustering.yaml`.
-- [ ] Encode stage, decision question, current stack, modality, biological goal, options, and source hints.
-- [ ] Include current assumptions: ArchR-centered pipeline, spatial ATAC, Apollo scaling from 10 to 90 samples.
+Concrete shape for `configs/methodintel_stage5_clustering.yaml`:
+
+```yaml
+stage: clustering
+decision_question: >
+  Should the Apollo spatial ATAC pipeline keep ArchR Louvain, switch to
+  Leiden inside ArchR, transplant SnapATAC2 labels/embedding into ArchR,
+  or migrate fully to SnapATAC2?
+current_stack: ArchR
+modality: scATAC
+platform: spatial ATAC
+biological_goal: cell typing  # or substate/subclone discovery
+scale:
+  samples_now: 10
+  samples_target: 90
+  cells_per_sample_estimate: TBD
+candidate_options:
+  - name: ArchR Louvain
+    algorithm: Louvain
+    implementation: ArchR
+  - name: ArchR Leiden
+    algorithm: Leiden
+    implementation: ArchR
+  - name: SnapATAC2 Leiden (transplant)
+    algorithm: Leiden
+    implementation: SnapATAC2
+    transplant_into: ArchR
+  - name: Full SnapATAC2 migration
+    algorithm: Leiden
+    implementation: SnapATAC2
+source_hints:
+  notion_export_path: <path to manually exported Stage 5 Notion page>
+  benchmark_pmids: []      # filled by source planner during build
+  original_pmids: []
+constraints:
+  - reference_frame_consistency: must be preserved end-to-end
+  - downstream_validation_burden: stay minimal until Stage 5 is settled
+```
+
+Tasks:
+
+- [ ] Add `configs/methodintel_stage5_clustering.yaml` with the shape above.
+- [ ] Fill the four candidate options for the MVP.
+- [ ] Leave `cells_per_sample_estimate` as `TBD` until Apollo confirms.
+- [ ] Do not populate `benchmark_pmids` / `original_pmids` manually --
+      the source planner fills them at build time.
 
 ### Phase 3 - Local Dossier Builder
 
