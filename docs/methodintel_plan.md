@@ -86,22 +86,43 @@ The MVP should reproduce the useful structure already present in Notion, but mak
 
 ## Core Objects
 
-Initial schema candidates:
+The Phase 1 schema ships only what one Stage 5 dossier needs. Graph nodes,
+lifecycle nodes, and reusable heuristic nodes are deferred to Phase 4.5
+(schema expansion) so the first dossier can validate the shape before the
+schema sprawls.
 
-- `MethodDecisionDossier`
-- `StageNode`
-- `MethodNode`
-- `ImplementationNode`
-- `EvidenceNode`
-- `MethodOption`
-- `EvidenceClaim`
-- `DecisionHeuristic`
-- `TradeoffDimension`
-- `FailureMode`
-- `ImplementationPath`
-- `ValidationExperiment`
+### Phase 1 (thin -- ships with the MVP)
 
-The schema should prevent generic summarization. Every dossier should force a concrete recommendation, evidence grade, and validation path.
+- `MethodDecisionDossier` -- top-level container for one decision question.
+- `MethodOption` -- one candidate in the decision (e.g. "ArchR Louvain").
+- `EvidenceClaim` -- one supported assertion, with a required `source_ref`.
+- `SourceRef` -- typed union (PMID | DOI | URL | docs_url | github_url |
+  personal_obs). Non-optional on every `EvidenceClaim`.
+- `TradeoffDimension` -- one axis on the trade-off matrix (e.g. "reference
+  frame consistency"), with per-option values.
+- `ValidationExperiment` -- a concrete experiment that would resolve the
+  decision.
+- `MethodGraphEdge` -- `{src, dst, edge_type, evidence_ref?}`. v1 stores
+  the graph as JSON only; the model exists now so the graph is queryable
+  before a visual view is added.
+
+### Phase 4.5 (deferred -- after one dossier validates Phase 1)
+
+- `StageNode`, `MethodNode`, `ImplementationNode`, `EvidenceNode`,
+  `DecisionDossierNode`, `HeuristicNode` -- graph-oriented node types.
+- `DecisionHeuristic` and `FailureMode` -- promoted from inline fields to
+  first-class nodes once we see how they cluster across multiple dossiers.
+- Lifecycle taxonomy expansion (see Method Lifecycle section).
+
+### Schema rules
+
+- Every `EvidenceClaim` MUST carry a `source_ref`. A claim without a
+  resolvable source is a schema violation, not a `# VERIFY` string.
+- `MethodOption.benchmark_evidence: list[EvidenceClaim]` -- typed, not
+  free-form prose.
+- Implementation and algorithm are separate fields on `MethodOption`
+  (`algorithm`, `implementation`, `version`) -- never merged into a
+  single "method name" string.
 
 ## Decision Heuristics
 
@@ -270,14 +291,31 @@ Notion export comes after local output is useful.
       to Phase 5; the Notion client in this repo stays write-only until
       then.
 
-### Phase 1 - Schema Draft
+### Phase 1 - Schema Draft (thin)
 
-- [ ] Add `src/litintel/methodintel/schema.py`.
-- [ ] Define Pydantic models for the core objects.
-- [ ] Include `DecisionHeuristic` for reusable but evidence-graded method-choice rules.
-- [ ] Include graph-oriented nodes for stages, methods, implementations, and evidence.
-- [ ] Include lifecycle/staleness fields for each method.
-- [ ] Add unit tests for required fields and JSON serialization.
+- [ ] Append the v1 dossier models to
+      `src/litintel/methodintel/schema.py` (router models already live
+      there; appending keeps all MethodIntel data shapes co-located).
+- [ ] Models: `SourceRef`, `EvidenceClaim`, `TradeoffDimension`,
+      `MethodOption`, `ValidationExperiment`, `MethodDecisionDossier`,
+      `MethodGraphEdge`.
+- [ ] `EvidenceClaim.source_ref` is required, not optional.
+- [ ] `MethodOption` keeps `algorithm`, `implementation`, and `version`
+      as separate fields.
+- [ ] Lifecycle status on `MethodOption` collapses to
+      `{current, under_review, legacy}` + `last_reviewed: date` +
+      `successor_methods: list[str]` for v1. The 6-tier enum is deferred
+      to Phase 4.5.
+- [ ] Add `src/litintel/methodintel/verify.py` with
+      `verify_evidence_claims(claims)` that resolves each PMID
+      `source_ref` against `litintel.pubmed.client.fetch_details` and
+      sets a `verified=True/False` flag on the claim. Other source-ref
+      types (DOI/URL/docs/github/personal_obs) are marked
+      `verified=None` (out of scope for the PMID verifier).
+- [ ] Add unit tests covering: required-field violations, JSON
+      serialization round-trip, PMID verifier happy path with a mocked
+      PubMed response, PMID verifier failure path when the PMID is not
+      returned.
 - [ ] Keep schema small enough to revise after one dossier.
 
 ### Phase 2 - Stage 5 Config
