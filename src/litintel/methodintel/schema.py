@@ -1,4 +1,4 @@
-from datetime import date as _date
+from datetime import date
 from enum import Enum
 from typing import ClassVar, Dict, List, Optional
 
@@ -130,10 +130,9 @@ class MethodOption(BaseModel):
     implementation: str
     version: Optional[str] = None
     lifecycle_status: LifecycleStatus = LifecycleStatus.CURRENT
-    last_reviewed: Optional[_date] = None
+    last_reviewed: Optional[date] = None
     successor_methods: List[str] = Field(default_factory=list)
     benchmark_evidence: List[EvidenceClaim] = Field(default_factory=list)
-    notes: Optional[str] = None
 
 
 class TradeoffDimension(BaseModel):
