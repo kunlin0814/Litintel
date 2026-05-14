@@ -270,6 +270,30 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
     for rec in enriched_records:
         rec.pop("_pass2_eligible", None)
 
+    # 4c. Tier C - Multimodal figure-grounded enrichment (auto path)
+    # Gated on: tier_c.enabled, RelevanceScore >= tier_c.min_score, PMCID present.
+    if config.tier_c and config.tier_c.enabled:
+        from litintel.tierc.runner import run_tier_c_for_record
+
+        tierc_candidates = [
+            r for r in enriched_records
+            if int(r.get("RelevanceScore", 0) or 0) >= config.tier_c.min_score
+            and r.get("PMCID")
+        ]
+        logger.info(
+            "Tier C [auto]: %d candidate(s) at score >= %d with PMCID",
+            len(tierc_candidates), config.tier_c.min_score,
+        )
+        for rec in tierc_candidates:
+            try:
+                tc_fields = run_tier_c_for_record(rec, config.tier_c, source="PMC_OA")
+                rec.update(tc_fields)
+            except Exception:
+                logger.exception(
+                    "Tier C [auto]: unexpected error for PMID=%s (continuing)",
+                    rec.get("PMID"),
+                )
+
     # 5. Output
     valid_records = [r for r in enriched_records if r.get("PipelineConfidence") != "Error"]
 
@@ -349,6 +373,40 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
                 logger.error(f"Drive sync failed: {e}")
         else:
             logger.warning("GOOGLE_DRIVE_FOLDER_ID not set, skipping Drive sync")
+
+    # Tier C inbox pass (manual-PDF path), executed in the same cron when enabled.
+    if (
+        config.tier_c
+        and config.tier_c.enabled
+        and config.tier_c.process_inbox_in_cron
+    ):
+        inbox_env = config.tier_c.inbox_folder_id_env
+        output_env = config.tier_c.output_folder_id_env
+        inbox_id = os.environ.get(inbox_env) if inbox_env else None
+        output_id = os.environ.get(output_env) if output_env else None
+
+        if not inbox_id or not output_id:
+            logger.warning(
+                "Tier C [inbox]: skipping (env not set: %s=%s %s=%s)",
+                inbox_env, bool(inbox_id), output_env, bool(output_id),
+            )
+        else:
+            try:
+                from litintel.storage.drive import get_drive_service
+                from litintel.tierc.inbox import process_inbox
+
+                service = get_drive_service(credentials_path=creds_path)
+                inbox_records = process_inbox(
+                    drive_service=service,
+                    inbox_folder_id=inbox_id,
+                    notion_index=notion_index,
+                    output_folder_id=output_id,
+                    engine_model=config.tier_c.model,
+                    identity_model=config.tier_c.identity_model,
+                )
+                logger.info("Tier C [inbox]: processed %d file(s)", len(inbox_records))
+            except Exception:
+                logger.exception("Tier C [inbox]: failed (continuing)")
 
     # RAG Corpus Sync (if VERTEX_RAG_CORPUS_NAME is set)
     corpus_name = os.environ.get("VERTEX_RAG_CORPUS_NAME")

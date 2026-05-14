@@ -83,3 +83,16 @@ storage:
 
 dedup:
   keys: ["DOI", "PMID"]
+
+tier_c:
+  enabled: true
+  model: "gemini-3.1-pro-preview"
+  thinking: "MEDIUM"
+  min_score: 90                                # auto path: only papers >= this score with a PMC OA PDF
+  inbox_folder_id_env: "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"
+  output_folder_id_env: "GOOGLE_DRIVE_TIERC_OUTPUT_FOLDER_ID"
+  process_inbox_in_cron: true
+  max_size_mb: 18.0
+  chunk_pages: 25
+  max_chunks: 4
+  identity_model: "gemini-3.1-flash-preview"

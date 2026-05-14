@@ -200,6 +200,40 @@ def upload_binary_file(
     return file.get('webViewLink', file.get('id', ''))
 
 
+def upload_tierc_artifact(
+    service,
+    folder_id: str,
+    pmid_or_name: str,
+    artifact_dict: Dict[str, Any],
+) -> str:
+    """Upload a Tier C artifact JSON to Drive.
+
+    File name is ``<pmid_or_name>_tierC.json``. If a file with that name
+    already exists in ``folder_id`` it is updated in place; otherwise a new
+    file is created.
+
+    Args:
+        service: Authenticated Drive service.
+        folder_id: Parent Drive folder ID.
+        pmid_or_name: PMID string or fallback filename stem (no extension).
+        artifact_dict: ``TierCArtifact.model_dump()`` or any JSON-serializable
+            dict.
+
+    Returns:
+        Drive web view link, or file ID if no link is returned.
+    """
+    safe_stem = _safe_filename_part(str(pmid_or_name or "tierc"), max_len=80)
+    file_name = f"{safe_stem}_tierC.json"
+    content = json.dumps(artifact_dict, ensure_ascii=True, indent=2).encode("utf-8")
+    return upload_binary_file(
+        service=service,
+        folder_id=folder_id,
+        file_name=file_name,
+        content=content,
+        mimetype="application/json",
+    )
+
+
 def upload_pmc_pdfs_to_drive(
     records: List[Dict[str, Any]],
     folder_id: str,

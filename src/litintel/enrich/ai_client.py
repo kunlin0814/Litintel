@@ -190,6 +190,106 @@ def _call_gemini(
             return _extract_json(raw_json), usage
         raise e
 
+def _call_gemini_multimodal(
+    client: genai.Client,
+    model: str,
+    system_prompt: str,
+    parts: List[Any],
+    schema: Dict[str, Any],
+    thinking_level: str = "MEDIUM",
+) -> Tuple[Dict[str, Any], Dict[str, int]]:
+    """Multimodal sibling of _call_gemini.
+
+    Mirrors _call_gemini exactly (config, ThinkingConfig fallback, 429 retry,
+    _extract_json postprocess, usage dict shape) but accepts a list of
+    pre-built ``types.Part`` objects (text + bytes) instead of a string prompt.
+
+    Args:
+        client: Cached google-genai client.
+        model: Gemini model id.
+        system_prompt: System instruction.
+        parts: List of ``types.Part`` (e.g. from ``Part.from_text`` and
+            ``Part.from_bytes``). The caller is responsible for ordering.
+        schema: JSON schema enforced via ``response_schema``. Pass empty dict
+            or None to skip.
+        thinking_level: Gemini ThinkingConfig level. Falls back if the model
+            does not support it in the active region.
+
+    Returns:
+        Tuple of (parsed JSON dict, usage dict with keys input/output/cached/thinking).
+    """
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=0.1,
+        response_mime_type="application/json",
+        thinking_config=types.ThinkingConfig(
+            include_thoughts=True,
+            thinking_level=thinking_level,
+        ),
+    )
+    if schema:
+        config.response_schema = schema
+
+    contents = [types.Content(role="user", parts=parts)]
+
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+        raw_json = response.text
+        usage = {
+            "input": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+            "output": response.usage_metadata.candidates_token_count if response.usage_metadata else 0,
+            "cached": response.usage_metadata.cached_content_token_count if getattr(response.usage_metadata, 'cached_content_token_count', None) else 0,
+            "thinking": getattr(response.usage_metadata, 'thoughts_token_count', 0) or 0,
+        }
+        logger.debug(f"Gemini multimodal raw response ({model}, thinking={thinking_level}): {raw_json[:500] if raw_json else ''}...")
+        return _extract_json(raw_json), usage
+
+    except Exception as e:
+        if "thinking_level is not supported" in str(e):
+            logger.warning(
+                f"Gemini {model} (multimodal): thinking_level not supported. Retrying without ThinkingConfig..."
+            )
+            config.thinking_config = None
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+            raw_json = response.text
+            usage = {
+                "input": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+                "output": response.usage_metadata.candidates_token_count if response.usage_metadata else 0,
+                "cached": response.usage_metadata.cached_content_token_count if getattr(response.usage_metadata, 'cached_content_token_count', None) else 0,
+                "thinking": 0,
+            }
+            logger.debug(f"Gemini multimodal raw (no thinking) ({model}): {raw_json[:500] if raw_json else ''}...")
+            return _extract_json(raw_json), usage
+
+        if "429" in str(e) or "quota" in str(e).lower() or "rate limit" in str(e).lower():
+            logger.warning(f"Gemini 429 Rate Limit (multimodal). Retrying {model}...")
+            time.sleep(2)
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+            raw_json = response.text
+            usage = {
+                "input": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+                "output": response.usage_metadata.candidates_token_count if response.usage_metadata else 0,
+                "cached": 0,
+                "thinking": 0,
+            }
+            logger.debug(f"Gemini multimodal retry response ({model}): {raw_json[:500] if raw_json else ''}...")
+            return _extract_json(raw_json), usage
+
+        raise e
+
+
 def _call_openai(
     client: OpenAI, 
     model: str, 

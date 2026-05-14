@@ -6,3 +6,5 @@ notion-client
 google-generativeai
 openai
 requests
+pypdf>=4.0
+Pillow>=10.0

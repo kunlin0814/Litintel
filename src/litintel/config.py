@@ -93,6 +93,20 @@ class StorageConfig(BaseModel):
 class DedupConfig(BaseModel):
     keys: List[str] = ["DOI", "PMID"]
 
+class TierCConfig(BaseModel):
+    """Tier C (figure-grounded multimodal PDF enrichment) settings."""
+    enabled: bool = False
+    model: str = "gemini-3.1-pro-preview"
+    thinking: str = "MEDIUM"
+    min_score: int = 90
+    inbox_folder_id_env: str = "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"
+    output_folder_id_env: str = "GOOGLE_DRIVE_TIERC_OUTPUT_FOLDER_ID"
+    process_inbox_in_cron: bool = True
+    max_size_mb: float = 18.0
+    chunk_pages: int = 25
+    max_chunks: int = 4
+    identity_model: str = "gemini-3.1-flash-preview"
+
 class AppConfig(BaseModel):
     pipeline_tier: PipelineTier
     pipeline_name: str
@@ -100,6 +114,7 @@ class AppConfig(BaseModel):
     ai: AIConfig
     storage: StorageConfig
     dedup: DedupConfig
+    tier_c: Optional[TierCConfig] = None
 
 def load_config_from_yaml(path: str) -> AppConfig:
     import yaml
