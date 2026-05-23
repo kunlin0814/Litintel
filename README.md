@@ -159,8 +159,8 @@ src/litintel/
 The pipeline uses a cache-optimized two-pass system:
 
 ### Pass 1: Scoring & Metadata
-- **Abstract-only papers** -> `gemini-3-flash-preview` with MEDIUM thinking (processed first to maximize cache hits)
-- **Full-text papers** -> `gemini-3-flash-preview` with HIGH thinking (processed second, grouped together)
+- **Abstract-only papers** -> `gemini-3.5-flash` with MEDIUM thinking (processed first to maximize cache hits)
+- **Full-text papers** -> `gemini-3.5-flash` with HIGH thinking (processed second, grouped together)
 
 ### Pass 2: Methods Extraction (Batched)
 - Triggers only for papers with **Score >= 88** and full-text availability
@@ -171,9 +171,9 @@ The pipeline uses a cache-optimized two-pass system:
 **Config (`configs/tier1_pca.yaml`):**
 ```yaml
 ai:
-  pass1_model_fulltext: "gemini-3-flash-preview"   # Pass 1 if Full Text
+  pass1_model_fulltext: "gemini-3.5-flash"   # Pass 1 if Full Text
   pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
-  pass1_model_abstract: "gemini-3-flash-preview"   # Pass 1 if Abstract Only
+  pass1_model_abstract: "gemini-3.5-flash"   # Pass 1 if Abstract Only
   pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
   pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods)
   pass2_thinking: "LOW"                             # Thinking level for methods extraction
