@@ -106,9 +106,9 @@ discovery:
 ai:
   provider: gemini
   # Two-Pass Architecture Config (same models as PCa)
-  pass1_model_fulltext: "gemini-3-flash-preview"
+  pass1_model_fulltext: "gemini-3.5-flash"
   pass1_thinking_fulltext: "MEDIUM"
-  pass1_model_abstract: "gemini-3.1-flash-lite-preview"
+  pass1_model_abstract: "gemini-3.5-flash"
   pass1_thinking_abstract: "MEDIUM"
   pass2_model: "gemini-3.1-pro-preview"
   pass2_thinking: "MEDIUM"
