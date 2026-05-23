@@ -15,7 +15,7 @@ It continuously monitors PubMed, uses AI to understand and score each paper, and
 **Key Capabilities:**
 -   **Two-Pass AI Architecture**: Pass 1 (Scoring) uses evidence-appropriate models; Pass 2 (Methods) extracts computational workflows from high-scoring full-text papers.
 -   **Cost-Optimized**: Automatic **Prompt Caching** reduces API costs by ~50% through cache-aware processing order (Abstract-only -> Full-text).
--   **Shadow Judge**: Heuristic-triggered secondary validation with evidence requirement (quote or self-contradiction must be cited).
+-   **Shadow Judge** *(Not implemented yet)*: Heuristic-triggered secondary validation with evidence requirement (quote or self-contradiction must be cited).
 -   **Smart Search**: Fetches papers in **batches of 200** to efficiently bypass duplicates and find new content using deep pagination (up to 1,000 papers).
 -   **Provenance Tracking**: Know exactly what evidence the AI used (`AI_EvidenceLevel`: FullText or Abstract).
 -   **Dual-Confidence Accession**: GEO/SRA candidates are regex-extracted, then AI-validated.
@@ -140,7 +140,7 @@ src/litintel/
 ├── pubmed/
 │   └── client.py       # NCBI E-Utilities integration
 ├── enrich/
-│   ├── ai_client.py    # Dual-provider (Gemini SDK default / OpenAI fallback) With Two-Pass & Shadow Judge
+│   ├── ai_client.py    # Dual-provider (Gemini SDK default / OpenAI fallback) With Two-Pass & Shadow Judge (Not implemented yet)
 │   ├── schema.py       # Pydantic models (Tier1Record, CompMethods)
 │   ├── prompt_templates.py # System prompts (Scoring + Methods)
 │   └── escalation_heuristics.py # H1-H4 heuristic checks
