@@ -234,25 +234,7 @@ class AnalysisStep(BaseModel):
   - `HighConfidence_Analysis.md`: Score >= 90 + Full-text papers.
   - `CompMethods_{Year}_Q{Q}.md`: Score >= 85 + Full-text papers with methods.
 
----
-
-## 7. Prefect Deployment (`.deployment/`)
-
-### `biweekly_flow.py`
-
-A Prefect `@flow` that wraps `run_tier1_pipeline`. Loads config from `configs/tier1_pca.yaml`.
-
-### `deploy_scheduled.py`
-
-Registers the flow with Prefect Cloud:
-
-- **Schedule**: Biweekly (RRule).
-- **Source**: Git-based (clones from GitHub at runtime).
-- **Work Pool**: `literature-managed-pool` (Prefect Managed / Serverless).
-
----
-
-## 8. Troubleshooting
+## 7. Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
@@ -260,11 +242,10 @@ Registers the flow with Prefect Cloud:
 | `API 429 (Rate Limit)` | Too many requests | Automatic retry with 2s delay. |
 | `NOTION_DB_ID not set` | Missing env var | Check `.env` and `load_dotenv()`. |
 | `GOOGLE_API_KEY not set` | Missing API key | Ensure `.env` contains valid key. |
-| `MissingFlowError` in Prefect | Old repo referenced | Ensure `deploy_scheduled.py` points to correct GitHub URL. |
 
 ---
 
-## 9. Cost Estimates
+## 8. Cost Estimates
 
 | Service | Usage | Cost (Monthly) |
 |---------|-------|----------------|
@@ -273,7 +254,6 @@ Registers the flow with Prefect Cloud:
 | Google Gemini (Pro) | Full-text papers | Covered by $10 Monthly Credit |
 | Google Gemini (Pass 2) | High-scoring papers | Covered by $10 Monthly Credit |
 | Notion | ~50 writes/run | Free |
-| Prefect Cloud | 2 runs/month | Free |
 
 **Cost Optimization Features:**
 
@@ -283,6 +263,6 @@ Registers the flow with Prefect Cloud:
 
 ---
 
-## 10. Legacy Code
+## 9. Legacy Code
 
-The `modules/` directory and `literature_flow.py` contain the original flat-file implementation. These are preserved for reference but **not used by the active pipeline**. All production code lives in `src/litintel/`.
+The `legacy/` directory contains the original Prefect-based flat-file implementation. These are preserved for reference but **not used by the active pipeline**. All production code lives in `src/litintel/`.

@@ -2,7 +2,7 @@
 
 **AI-Augmented Research Memory System** for spatial and single-cell cancer biology literature.
 
-![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![Prefect](https://img.shields.io/badge/prefect-3.x-orange) ![License](https://img.shields.io/badge/license-MIT-green)
+![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -20,7 +20,6 @@ It continuously monitors PubMed, uses AI to understand and score each paper, and
 -   **Provenance Tracking**: Know exactly what evidence the AI used (`AI_EvidenceLevel`: FullText or Abstract).
 -   **Dual-Confidence Accession**: GEO/SRA candidates are regex-extracted, then AI-validated.
 -   **Multi-Storage Sync**: Notion (human review), Google Drive JSONL/Markdown (machine ingestion), CSV (archival).
--   **Automated Scheduling**: Prefect Cloud runs every two weeks, hands-free.
 
 ---
 
@@ -211,23 +210,6 @@ All AI-extracted fields are strictly typed:
 | 80-89 | 3 | High / Solid (PCa + 1 key tech) |
 | 90-94 | 4 | Highest (Non-PCa + >=3 techs, PCa + Multiome + Bulk) |
 | 95-100 | 4 | Must Read (PCa + Multiome + Spatial, >=100 samples) |
-
----
-
-## Prefect Deployment
-
-Automated serverless execution every two weeks.
-
-**Trigger Manually:**
-```bash
-prefect deployment run 'PCa-Tier1-GoldStandard-Pipeline/tier1-pca-gold-standard'
-```
-
-**Manage:**
-```bash
-prefect deployment pause 'PCa-Tier1-GoldStandard-Pipeline/tier1-pca-gold-standard'
-prefect deployment resume 'PCa-Tier1-GoldStandard-Pipeline/tier1-pca-gold-standard'
-```
 
 ---
 

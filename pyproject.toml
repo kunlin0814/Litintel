@@ -13,7 +13,6 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "prefect>=2.0.0",
     "google-generativeai",
     "google-genai",
     "openai",
