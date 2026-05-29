@@ -1,0 +1,147 @@
+# Tier-1: Cancer Lineage Plasticity Triage & Enrichment
+# Covers: phenotype switching, transdifferentiation, NE differentiation,
+#         EMT, epigenetic reprogramming across solid tumors.
+
+pipeline_tier: 1
+pipeline_name: "Lineage_Plasticity_Triage"
+
+discovery:
+  mode: KEYWORD
+  queries:
+    # Q1: Cancer-specific lineage plasticity + single-cell/spatial omics
+    - >
+      ("lineage plasticity"[tiab]
+      OR "cancer plasticity"[tiab]
+      OR "tumor plasticity"[tiab]
+      OR "tumour plasticity"[tiab]
+      OR "cancer cell plasticity"[tiab]
+      OR "tumor cell plasticity"[tiab]
+      OR "cell fate switching"[tiab]
+      OR transdifferentiation[tiab]
+      OR "phenotype switching"[tiab]
+      OR "lineage infidelity"[tiab])
+      AND
+      ("neoplasms"[MeSH Terms]
+      OR cancer[tiab]
+      OR carcinoma[tiab]
+      OR tumor[tiab]
+      OR tumour[tiab])
+      AND
+      ("single-cell"[tiab] OR "single cell"[tiab]
+      OR "single-nucleus"[tiab] OR "single nucleus"[tiab]
+      OR scRNA*[tiab] OR snRNA*[tiab] OR scATAC*[tiab] OR snATAC*[tiab]
+      OR multiome[tiab]
+      OR "spatial transcriptom*"[tiab]
+      OR Visium[tiab] OR Xenium[tiab] OR CosMx[tiab]
+      OR "chromatin accessibility"[tiab]
+      OR "epigenetic reprogram*"[tiab]
+      OR "trajectory inference"[tiab] OR pseudotime[tiab])
+      AND ("Journal Article"[pt]
+      NOT "Review"[pt]
+      NOT "Editorial"[pt]
+      NOT "Comment"[pt]
+      NOT "Letter"[pt]
+      NOT "News"[pt]
+      NOT "Case Reports"[pt])
+      AND english[la]
+      NOT "Preprint"[Publication Type]
+
+    # Q2: Neuroendocrine transdifferentiation (prostate, lung, bladder)
+    - >
+      ("neuroendocrine differentiation"[tiab]
+      OR "neuroendocrine transdifferentiation"[tiab]
+      OR NEPC[tiab]
+      OR "treatment-emergent neuroendocrine"[tiab]
+      OR "AR indifference"[tiab]
+      OR "androgen indifference"[tiab]
+      OR "small cell transformation"[tiab]
+      OR "SCLC transformation"[tiab]
+      OR "histologic transformation"[tiab])
+      AND
+      ("single-cell"[tiab] OR "single cell"[tiab]
+      OR scRNA*[tiab] OR snRNA*[tiab] OR scATAC*[tiab]
+      OR multiome[tiab]
+      OR "chromatin remodeling"[tiab]
+      OR "epigenetic reprogram*"[tiab]
+      OR "spatial transcriptom*"[tiab])
+      AND ("Journal Article"[pt]
+      NOT "Review"[pt]
+      NOT "Editorial"[pt]
+      NOT "Comment"[pt])
+      AND english[la]
+      NOT "Preprint"[Publication Type]
+
+    # Q3: EMT + epigenetic reprogramming + cancer
+    - >
+      ("epithelial-mesenchymal transition"[tiab]
+      OR "epithelial mesenchymal transition"[tiab]
+      OR EMT[tiab]
+      OR "mesenchymal-epithelial transition"[tiab]
+      OR MET[tiab])
+      AND
+      ("chromatin remodeling"[tiab]
+      OR "chromatin accessibility"[tiab]
+      OR "epigenetic reprogram*"[tiab]
+      OR "epigenetic plasticity"[tiab]
+      OR "transcription factor rewiring"[tiab]
+      OR "pioneer factor"[tiab]
+      OR "chromatin state"[tiab])
+      AND
+      ("neoplasms"[MeSH Terms]
+      OR cancer[tiab]
+      OR carcinoma[tiab])
+      AND
+      ("single-cell"[tiab] OR "single cell"[tiab]
+      OR scRNA*[tiab] OR scATAC*[tiab] OR multiome[tiab]
+      OR "spatial transcriptom*"[tiab])
+      AND ("Journal Article"[pt]
+      NOT "Review"[pt]
+      NOT "Editorial"[pt]
+      NOT "Comment"[pt])
+      AND english[la]
+      NOT "Preprint"[Publication Type]
+  retmax: 30
+  reldays: 365
+
+ai:
+  provider: gemini
+  # Two-Pass Architecture Config (same models as PCa)
+  pass1_model_fulltext: "gemini-3.5-flash"
+  pass1_thinking_fulltext: "MEDIUM"
+  pass1_model_abstract: "gemini-3.5-flash"
+  pass1_thinking_abstract: "MEDIUM"
+  pass2_model: "gemini-3.1-pro-preview"
+  pass2_thinking: "MEDIUM"
+  pass2_min_score: 88
+
+  max_chars: 80000
+  prompt_template: "tier1_plasticity"
+  escalation_triggers:
+    score_range: [70, 79]
+    min_rationale_length: 50
+    escalate_on_high_reuse: 4
+    h3_high_score_thresh: 80
+    h3_low_score_thresh: 70
+    escalate_min_score: 87
+    retry_on_error: true
+
+storage:
+  notion:
+    enabled: true
+    database_id_env: "NOTION_DB_ID_PLASTICITY"
+  drive:
+    enabled: true
+    folder_id_env: "GOOGLE_DRIVE_FOLDER_ID_PLASTICITY"
+    papers_jsonl_file_id_env: "GOOGLE_DRIVE_PAPERS_JSONL_FILE_ID_PLASTICITY"
+    notebooklm_folder_id_env: "GOOGLE_DRIVE_NOTEBOOKLM_FOLDER_ID_PLASTICITY"
+    methods_folder_id_env: "GOOGLE_DRIVE_COMP_METHODS_FOLDER_ID_PLASTICITY"
+    upload_pdfs: true
+    pdf_min_score: 88
+    pdf_folder_name: "PDFs"
+    pdf_folder_id_env: "GOOGLE_DRIVE_PDF_FOLDER_ID_PLASTICITY"
+  csv:
+    enabled: true
+    filename: "papers_tier1_plasticity.csv"
+
+dedup:
+  keys: ["DOI", "PMID"]

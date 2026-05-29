@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LitIntel & MethodIntel Action Plan</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .section {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        li {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+        }
+        .checkbox {
+            margin-right: 15px;
+            margin-top: 5px;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #bdc3c7;
+            border-radius: 3px;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .content {
+            flex-grow: 1;
+        }
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .tag.cleanup { background: #e74c3c; color: white; }
+        .tag.docs { background: #f39c12; color: white; }
+        .tag.feature { background: #27ae60; color: white; }
+        .tag.core { background: #8e44ad; color: white; }
+        code {
+            background: #f1f2f6;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, monospace;
+            font-size: 0.9em;
+            color: #c0392b;
+        }
+        .note {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>LitIntel & MethodIntel Action Plan</h1>
+    <p>A consolidated to-do list covering the transition to a local-only CLI setup, Tier 1 documentation updates, and the completion of the MethodIntel subsystem.</p>
+
+    <div class="section">
+        <h2>1. Prefect Cleanup & Transition to Local CLI</h2>
+        <p>Since you are running the pipeline locally via terminal (<code>python src/litintel/cli.py</code>) and don't plan to use Prefect, these legacy files should be retired to avoid confusion.</p>
+        <ul>
+            <li>
+                <div class="checkbox" style="background-color: #27ae60; border-color: #27ae60; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✓</div>
+                <div class="content">
+                    <span class="tag cleanup">Cleanup</span> <strong>Move legacy module folders</strong>
+                    <div class="note">Create a <code>legacy/</code> folder and move the old <code>modules/</code> and <code>old_script/</code> directories into it. These contain the old Prefect <code>@task</code> implementations.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox" style="background-color: #27ae60; border-color: #27ae60; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✓</div>
+                <div class="content">
+                    <span class="tag cleanup">Cleanup</span> <strong>Move legacy flows</strong>
+                    <div class="note">Move <code>literature_flow.py</code> and <code>scripts/check_relevance_scores.py</code> (which still uses <code>@flow</code>) to the <code>legacy/</code> folder.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox" style="background-color: #27ae60; border-color: #27ae60; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✓</div>
+                <div class="content">
+                    <span class="tag cleanup">Cleanup</span> <strong>Update dependencies</strong>
+                    <div class="note">Remove <code>prefect</code> from both <code>requirements.txt</code> and <code>pyproject.toml</code>.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox" style="background-color: #27ae60; border-color: #27ae60; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✓</div>
+                <div class="content">
+                    <span class="tag docs">Docs</span> <strong>Update README.md and DETAILS.md</strong>
+                    <div class="note">Remove or demote the "Prefect Deployment" sections. Make it explicitly clear that the local CLI is the primary and only entry point.</div>
+                </div>
+            </li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>2. Tier 1 Pipeline Documentation Gaps</h2>
+        <p>The code in <code>src/litintel/pipeline/tier1.py</code> has outpaced the documentation. <code>DETAILS.md</code> and <code>README.md</code> need updates to reflect the current advanced features.</p>
+        <ul>
+            <li>
+                <div class="checkbox" style="background-color: #27ae60; border-color: #27ae60; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">✓</div>
+                <div class="content">
+                    <span class="tag docs">Docs</span> <strong>Document the Shadow Judge Validation</strong>
+                    <div class="note">Added "(Not implemented yet)" labels to the README since this feature is deferred.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag docs">Docs</span> <strong>Document PMC OA Full-Text Fetching</strong>
+                    <div class="note">Explain the <code>FullTextUsed</code> flag. Document how the pipeline extracts the "Methods" and "Results" sections from PMC XML to enrich the LLM context.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag docs">Docs</span> <strong>Document the Tier C Inbox Pass</strong>
+                    <div class="note">Document the <code>GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID</code> and <code>GOOGLE_DRIVE_TIERC_OUTPUT_FOLDER_ID</code> variables. Explain the workflow for dropping manual PDFs into Drive to trigger Tier C analysis.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag docs">Docs</span> <strong>Document LLM Cache Optimization</strong>
+                    <div class="note">Add a note about how the pipeline groups "Abstract-only" (Nano model) and "Full-text" (Mini model) papers to maximize LLM prompt caching efficiency.</div>
+                </div>
+            </li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>3. MethodIntel Completion (Phase 3)</h2>
+        <p>The routing, schema, and verification logic exist. The next step is to build the actual dossier generator and the HTML renderer you requested.</p>
+        <ul>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag feature">Feature</span> <strong>Add MVP Configuration</strong>
+                    <div class="note">Create <code>configs/methodintel_stage5_clustering.yaml</code> using the shape defined in <code>docs/methodintel_plan.md</code> (ArchR vs SnapATAC2).</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag core">Core</span> <strong>Build the Dossier Pipeline</strong>
+                    <div class="note">Create <code>src/litintel/methodintel/build_dossier.py</code>. This needs to implement: Config parsing -> Source Retrieval -> LLM Synthesis -> <code>verify_evidence_claims()</code> -> Output saving.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag core">Core</span> <strong>Write the LLM Prompt</strong>
+                    <div class="note">Create <code>src/litintel/methodintel/prompts.py</code>. The prompt MUST force the LLM to output valid <code>MethodDecisionDossier</code> JSON and strictly enforce that every <code>EvidenceClaim</code> has a valid <code>source_ref</code>.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag feature">Feature</span> <strong>Implement the HTML Renderer</strong>
+                    <div class="note">In the builder, add logic to render the JSON dossier into a rich HTML report (<code>stage5_clustering.html</code>). It should feature color-coded trade-off matrices, verified/unverified badges for evidence, and a clear call-to-action for the validation experiment.</div>
+                </div>
+            </li>
+            <li>
+                <div class="checkbox"></div>
+                <div class="content">
+                    <span class="tag feature">Feature</span> <strong>Expose via CLI</strong>
+                    <div class="note">Add a command to <code>cli.py</code> so you can run: <code>litintel methodintel build configs/methodintel_stage5_clustering.yaml</code>.</div>
+                </div>
+            </li>
+        </ul>
+    </div>
+
+</body>
+</html>

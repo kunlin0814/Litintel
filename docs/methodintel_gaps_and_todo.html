@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MethodIntel — Gap Analysis &amp; Revised Phase 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d1014;
+    --bg2:#11161c;
+    --panel:#161d25;
+    --panel2:#1b232d;
+    --ink:#e7ecf2;
+    --ink-dim:#9fb0c0;
+    --ink-faint:#647386;
+    --line:#222d39;
+    --line2:#2d3b49;
+    --crit:#ff5d5d;
+    --crit-bg:#2a1417;
+    --high:#ffb13d;
+    --high-bg:#2a2010;
+    --med:#4fd6c8;
+    --med-bg:#0f2522;
+    --done:#6fe39a;
+    --accent:#f0c14b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"IBM Plex Sans",sans-serif;
+    line-height:1.6;
+    font-size:16px;
+    background-image:
+      radial-gradient(900px 500px at 85% -5%, rgba(240,193,75,0.06), transparent 60%),
+      radial-gradient(700px 500px at 0% 100%, rgba(79,214,200,0.05), transparent 55%);
+    background-attachment:fixed;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.035;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:64px 28px 120px;position:relative;z-index:1}
+
+  /* ---- Masthead ---- */
+  .masthead{border-bottom:1px solid var(--line2);padding-bottom:34px;margin-bottom:14px}
+  .kicker{
+    font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:0.28em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:20px;
+  }
+  h1{
+    font-family:"Fraunces",serif;font-weight:600;font-size:clamp(34px,6vw,58px);
+    line-height:1.02;letter-spacing:-0.02em;margin-bottom:18px;
+  }
+  h1 em{font-style:italic;color:var(--accent)}
+  .standfirst{font-size:18px;color:var(--ink-dim);max-width:62ch}
+  .meta{
+    display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:24px;
+    font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-faint);
+  }
+  .meta span b{color:var(--ink-dim);font-weight:500}
+
+  /* ---- Verdict ---- */
+  .verdict{
+    margin:38px 0 56px;padding:26px 28px;background:var(--panel);
+    border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:4px;
+  }
+  .verdict h2{font-family:"Fraunces",serif;font-size:21px;font-weight:600;margin-bottom:10px}
+  .verdict p{color:var(--ink-dim);font-size:15.5px}
+  .verdict p + p{margin-top:10px}
+  .verdict strong{color:var(--ink)}
+
+  /* ---- Section headers ---- */
+  .sec-head{display:flex;align-items:baseline;gap:16px;margin:64px 0 8px}
+  .sec-num{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--accent);font-weight:700}
+  .sec-head h2{font-family:"Fraunces",serif;font-size:30px;font-weight:600;letter-spacing:-0.01em}
+  .sec-sub{color:var(--ink-faint);font-size:14px;margin-bottom:34px;font-family:"JetBrains Mono",monospace}
+
+  /* ---- Gap cards ---- */
+  .gap{
+    background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    margin-bottom:18px;overflow:hidden;transition:border-color .2s;
+  }
+  .gap:hover{border-color:var(--line2)}
+  .gap-top{display:flex;align-items:flex-start;gap:16px;padding:20px 22px 16px}
+  .sev{
+    flex:none;font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:700;
+    letter-spacing:0.1em;padding:5px 9px;border-radius:3px;text-transform:uppercase;margin-top:3px;
+  }
+  .sev.c{background:var(--crit-bg);color:var(--crit);border:1px solid #44222a}
+  .sev.h{background:var(--high-bg);color:var(--high);border:1px solid #463618}
+  .sev.m{background:var(--med-bg);color:var(--med);border:1px solid #1c4a44}
+  .gap-title{font-family:"Fraunces",serif;font-size:20px;font-weight:600;line-height:1.25}
+  .gap-id{font-family:"JetBrains Mono",monospace;color:var(--ink-faint);font-size:12px;display:block;margin-bottom:3px;letter-spacing:0.05em}
+  .gap-body{padding:0 22px 22px 22px}
+  .gap-body .row{padding:13px 0;border-top:1px solid var(--line)}
+  .gap-body .row:first-child{border-top:1px dashed var(--line2)}
+  .lbl{
+    font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:0.14em;
+    text-transform:uppercase;color:var(--ink-faint);display:block;margin-bottom:5px;
+  }
+  .row.problem .lbl{color:var(--crit)}
+  .row.bite .lbl{color:var(--high)}
+  .row.fix .lbl{color:var(--done)}
+  .gap-body p{color:var(--ink-dim);font-size:15px}
+  .gap-body code{
+    font-family:"JetBrains Mono",monospace;font-size:13px;background:var(--bg2);
+    color:var(--accent);padding:1px 6px;border-radius:3px;border:1px solid var(--line);
+  }
+  .analogy{
+    margin-top:8px;padding:12px 16px;background:var(--bg2);border-radius:4px;
+    border-left:2px solid var(--med);font-size:14.5px;color:var(--ink-dim);font-style:italic;
+  }
+  .analogy b{font-style:normal;color:var(--med);font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:4px}
+
+  /* ---- Progress ---- */
+  .progress-card{
+    position:sticky;top:18px;z-index:5;background:var(--panel2);
+    border:1px solid var(--line2);border-radius:6px;padding:16px 20px;margin-bottom:30px;
+    display:flex;align-items:center;gap:18px;backdrop-filter:blur(6px);
+  }
+  .progress-card .count{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ink-dim);white-space:nowrap}
+  .progress-card .count b{color:var(--accent);font-size:18px}
+  .bar{flex:1;height:8px;background:var(--bg2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar-fill{height:100%;width:0;background:linear-gradient(90deg,var(--med),var(--done));border-radius:99px;transition:width .35s ease}
+
+  /* ---- Todo groups ---- */
+  .todo-group{margin-bottom:26px}
+  .group-head{
+    display:flex;align-items:center;gap:12px;margin-bottom:4px;
+    font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;
+  }
+  .group-head .tag{padding:3px 8px;border-radius:3px;font-weight:700;font-size:10px}
+  .tag.now{background:var(--crit-bg);color:var(--crit)}
+  .tag.next{background:var(--high-bg);color:var(--high)}
+  .tag.then{background:var(--med-bg);color:var(--med)}
+  .group-head .gt{color:var(--ink);font-family:"Fraunces",serif;font-size:18px;text-transform:none;letter-spacing:0;font-weight:600}
+  .group-desc{color:var(--ink-faint);font-size:13px;margin-bottom:14px;padding-left:2px}
+
+  .task{
+    display:flex;gap:13px;padding:12px 16px;background:var(--panel);
+    border:1px solid var(--line);border-radius:5px;margin-bottom:7px;cursor:pointer;
+    transition:background .15s,border-color .15s;align-items:flex-start;
+  }
+  .task:hover{background:var(--panel2);border-color:var(--line2)}
+  .box{
+    flex:none;width:19px;height:19px;border:1.5px solid var(--line2);border-radius:4px;
+    margin-top:2px;position:relative;transition:all .15s;
+  }
+  .task.done .box{background:var(--done);border-color:var(--done)}
+  .task.done .box::after{
+    content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;
+    border:solid var(--bg);border-width:0 2px 2px 0;transform:rotate(45deg);
+  }
+  .task-txt{font-size:14.5px;color:var(--ink);transition:color .15s}
+  .task.done .task-txt{color:var(--ink-faint);text-decoration:line-through;text-decoration-color:var(--line2)}
+  .task-txt .ref{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--accent);margin-left:7px;opacity:.85}
+  .task-txt code{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--med);background:var(--bg2);padding:1px 5px;border-radius:3px}
+
+  /* ---- Keystone ---- */
+  .keystone{
+    margin-top:64px;padding:34px 32px;background:linear-gradient(160deg,var(--panel2),var(--bg2));
+    border:1px solid var(--line2);border-radius:8px;position:relative;overflow:hidden;
+  }
+  .keystone::before{content:"?";position:absolute;right:24px;top:-30px;font-family:"Fraunces",serif;font-size:200px;color:var(--accent);opacity:0.06;font-style:italic}
+  .keystone .kicker{margin-bottom:14px}
+  .keystone h2{font-family:"Fraunces",serif;font-size:26px;font-weight:600;max-width:24ch;line-height:1.2;margin-bottom:14px;position:relative}
+  .keystone p{color:var(--ink-dim);max-width:64ch;position:relative;font-size:15.5px}
+  .keystone p + p{margin-top:12px}
+  .keystone strong{color:var(--accent)}
+
+  .foot{margin-top:54px;padding-top:22px;border-top:1px solid var(--line);font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--ink-faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="kicker">Design Review · Method-Decision Subsystem</div>
+    <h1>MethodIntel: what the plan <em>misses</em>, and what to do about it</h1>
+    <p class="standfirst">A gap analysis of the three planning docs (plan · router_todo · artifacts), plus a re-ordered Phase&nbsp;1 that validates the thing actually worth building — the graph — instead of validating a single isolated card.</p>
+    <div class="meta">
+      <span><b>Scope:</b> Phase 0–1 + schema</span>
+      <span><b>Verdict:</b> Build it — but re-sequence</span>
+      <span><b>Redundancy vs Deep Research:</b> Settled / non-issue</span>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <h2>The short version</h2>
+    <p>The plan has already won the argument you opened with: <strong>LitIntel is paper-centered, MethodIntel is decision-centered</strong>, and the four-axis decision model — method × implementation × ecosystem × validation burden, kept separable — is the single best idea in the document. That is exactly what Deep Research and the <code>architecture</code> skill both flatten. Stop relitigating redundancy.</p>
+    <p>The problem is sequencing, not concept. <strong>The graph is the only reason this isn't redundant, and the plan defers the graph to Phase 4.5 while shipping a flat card in Phase 1.</strong> You are about to validate the tiling before checking whether the tunnels connect.</p>
+  </div>
+
+  <!-- ============ GAPS ============ -->
+  <div class="sec-head"><span class="sec-num">01</span><h2>What you miss</h2></div>
+  <div class="sec-sub">// eight gaps, ranked by how much they bite. four are from the live critique; four surfaced on full read.</div>
+
+  <!-- GAP 1 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev c">Critical</span>
+      <div><span class="gap-id">GAP-01 · sequencing</span><span class="gap-title">The graph is deferred — but the graph is the whole moat</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p>Phase 1 ships a flat <code>MethodDecisionDossier</code> with a single <code>MethodGraphEdge</code> stub; the node taxonomy (<code>StageNode</code>, <code>sensitive_to</code>, <code>contradicted_by</code>) is pushed to Phase 4.5 "after one dossier validates Phase 1."</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>A single dossier has <b>no edges to other dossiers</b>. Graph value only appears at N≥2. Your Phase 4 review literally asks "does the schema capture graph edges?" — a question one isolated dossier <em>cannot answer</em>.</p>
+        <div class="analogy"><b>Analogy</b>You're tiling the first subway station and checking the signage before deciding where any tunnel connects. The station looks finished; you've learned nothing about the network.</div>
+      </div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Make the MVP <b>two connected dossiers</b> (Stage 4 integration + Stage 5 clustering) sharing one <code>sensitive_to</code> edge — the LSI/embedding choice upstream of every clustering claim. One dossier tests the card; two tests the graph.</p></div>
+    </div>
+  </div>
+
+  <!-- GAP 2 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev c">Critical</span>
+      <div><span class="gap-id">GAP-02 · missing operation</span><span class="gap-title">"Consequence synthesis" — the 60–70% you flagged yourself — vanished</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p>Your own scheme doc named step 4 the crown jewel: "if I use this method here, what downstream claims become stronger, weaker, <b>circular</b>, incompatible?" The plan schema-fies the <em>storage</em> of consequences (edges, trade-off dims) but never specifies the <em>operation</em> that computes them.</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>This is the difference between a tool that annotates "Leiden is sensitive to embedding" and one that says "you chose LSI in Stage&nbsp;4, therefore your Stage&nbsp;7 co-accessibility claim is circular." Only the second is worth your engineering hours. <b>The plan builds the database and forgets the query.</b></p></div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Promote consequence-propagation to a named Phase&nbsp;1 operation, even crude: given option set + pipeline edges, emit the list of downstream claims affected by each upstream choice. This is graph traversal, not an LLM call — cheap, deterministic, auditable.</p></div>
+    </div>
+  </div>
+
+  <!-- GAP 3 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev h">High</span>
+      <div><span class="gap-id">GAP-03 · your own principle</span><span class="gap-title">No evaluation harness — no definition of a "correct" dossier</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p>Phase 4 is "compare generated output against the current Notion page" — a one-time manual eyeball. There is no golden set, no agreement metric, no false-recommendation check. Your LitIntel refactor <em>explicitly</em> has an eval harness with tier agreement + false-positive metrics. MethodIntel has none.</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>Without a harness you can't tell a schema regression from a model-quality regression when you expand to Stage&nbsp;4, 6, 7. You'll be flying on vibes — the exact failure your "subjective signals are valid <em>alongside</em> metrics" principle warns against. Vibes are a supplement, not the instrument.</p></div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Define 2–3 golden dossiers with hand-graded recommendations + evidence sets. Metric: does the LLM build reproduce the human recommendation, and does every claim resolve to a real source? Run it on every schema change.</p></div>
+    </div>
+  </div>
+
+  <!-- GAP 4 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev h">High</span>
+      <div><span class="gap-id">GAP-04 · false assurance</span><span class="gap-title">The verifier only checks PMIDs — so "verified" will quietly lie</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p><code>verify_evidence_claims()</code> resolves PMID refs and marks everything else (<code>docs</code>, <code>github</code>, <code>personal_obs</code>) as <code>verified=None</code>. But your most decision-relevant, fastest-drifting claims — "ArchR <code>addClusters()</code> defaults to Louvain," "SnapATAC2 scales to N cells" — are exactly the docs/github ones.</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>A reviewer skims a wall of green PMIDs and trusts the whole artifact. This is the "beautiful graph that encodes wrong assumptions" failure <b>arriving through the verification layer</b> instead of synthesis.</p></div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Rename so <code>None</code> reads as "unverifiable-by-system — human must check," and have the Markdown renderer surface those claims in the <em>same</em> follow-up block as <code>verified=False</code>. Never let "no verifier exists" render as visual parity with "verified true."</p></div>
+    </div>
+  </div>
+
+  <!-- GAP 5 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev h">High</span>
+      <div><span class="gap-id">GAP-05 · router bloat</span><span class="gap-title"><code>staleness_check</code> is a cathedral for a post-it problem</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p>A whole fifth router mode + its own lifecycle-report artifact + a deferred six-tier enum, all aimed at one job: "is Cufflinks outdated." Be honest — this is a guard against <em>your own</em> training-era defaults. Real risk, wrong size.</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>This is the skill-routing-precision failure you've correctly resisted everywhere else. Every extra mode dilutes router classification accuracy. You're paying for a fifth lane to carry one bicycle.</p></div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Demote staleness to a <em>field</em> on every dossier (<code>last_reviewed</code> + a "flag if &gt;18mo" rule), not a mode. Keep four router modes. The signal is right; the surface area is wrong.</p></div>
+    </div>
+  </div>
+
+  <!-- GAP 6 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev m">Medium</span>
+      <div><span class="gap-id">GAP-06 · judgment capture</span><span class="gap-title">No structured slot for the human <em>overriding</em> the recommendation</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p><code>lifecycle_status</code> is user-confirmed, but the <em>recommendation</em> isn't. When you disagree with the LLM's Stage&nbsp;5 call, there's nowhere in the persisted JSON to record your override + rationale. It gets lost in a chat or a Notion edit.</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>This is precisely the authorship-vs-approval distinction you live by. A dossier that only stores the machine's recommendation makes you an approver. Capturing your override + reasoning makes you the author — and builds the heuristic library that is MethodIntel's long-term value.</p></div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Add <code>human_decision</code> + <code>human_rationale</code> + <code>agreed_with_llm: bool</code> to the dossier. Over time, the disagreements become your most valuable <code>HeuristicNode</code> seeds.</p></div>
+    </div>
+  </div>
+
+  <!-- GAP 7 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev m">Medium</span>
+      <div><span class="gap-id">GAP-07 · reproducibility</span><span class="gap-title">The output dossier isn't provenance-stamped</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p>Options carry a <code>version</code> field, but the dossier output doesn't stamp which LLM model, which prompt version, which retrieval date, or which package versions produced it. Reproducibility is #2 in your own code-review priority order — it shouldn't be missing from the artifact that <em>is</em> the deliverable.</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>Six months out, a dossier recommends Leiden and you can't tell whether that was Gemini Pro reasoning over 2024 benchmarks or 2026 ones. An un-stamped decision artifact is a rumor with a schema.</p></div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Add a <code>provenance</code> block: <code>model</code>, <code>prompt_version</code>, <code>build_date</code>, <code>source_coverage</code>, <code>pkg_versions</code>. One block, written once at build time.</p></div>
+    </div>
+  </div>
+
+  <!-- GAP 8 -->
+  <div class="gap">
+    <div class="gap-top">
+      <span class="sev m">Medium</span>
+      <div><span class="gap-id">GAP-08 · the decisive one</span><span class="gap-title">Edges have no review cadence — so the graph rots silently</span></div>
+    </div>
+    <div class="gap-body">
+      <div class="row problem"><span class="lbl">Problem</span><p><code>last_reviewed</code> exists on lifecycle status but there's no equivalent on <code>sensitive_to</code> / <code>replaces_or_modernizes</code> edges. Nobody owns re-checking whether an edge is still true.</p></div>
+      <div class="row bite"><span class="lbl">Why it bites</span><p>A decision graph whose edges aren't re-reviewed rots <b>faster</b> than prose — because it looks authoritative while going stale. This is the one question that decides whether MethodIntel becomes a career asset or a beautiful dead repo.</p></div>
+      <div class="row fix"><span class="lbl">Fix</span><p>Put <code>last_reviewed</code> + <code>reviewer</code> on every edge. Add a CLI command that lists edges older than a threshold. Edge maintenance <em>is</em> the product.</p></div>
+    </div>
+  </div>
+
+  <!-- ============ TODO ============ -->
+  <div class="sec-head"><span class="sec-num">02</span><h2>The to-do list</h2></div>
+  <div class="sec-sub">// re-sequenced. tap to check off — progress is live, in-session only.</div>
+
+  <div class="progress-card">
+    <div class="count"><b id="pct">0%</b> &nbsp;·&nbsp; <span id="frac">0 / 0</span> done</div>
+    <div class="bar"><div class="bar-fill" id="fill"></div></div>
+  </div>
+
+  <!-- NOW -->
+  <div class="todo-group">
+    <div class="group-head"><span class="tag now">Do now</span><span class="gt">Before another line of schema.py</span></div>
+    <div class="group-desc">These change the shape of Phase 1. Decide them first or you'll refactor.</div>
+    <div class="task"><div class="box"></div><div class="task-txt">Re-scope the MVP from <b>one</b> Stage 5 dossier to <b>two connected</b> dossiers: Stage 4 integration + Stage 5 clustering <span class="ref">GAP-01</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Author the single shared <code>sensitive_to</code> edge by hand (LSI/embedding → clustering) as the graph's first real test <span class="ref">GAP-01</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Add a <code>propagate_consequences()</code> operation spec: option set + edges → affected downstream claims <span class="ref">GAP-02</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Demote <code>staleness_check</code> from router mode to a dossier field; cut router to <b>four</b> modes <span class="ref">GAP-05</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Decide the edge-maintenance contract: who reviews edges, how often, how it's surfaced <span class="ref">GAP-08</span></div></div>
+  </div>
+
+  <!-- NEXT -->
+  <div class="todo-group">
+    <div class="group-head"><span class="tag next">Do next</span><span class="gt">Phase 1 schema &amp; build, corrected</span></div>
+    <div class="group-desc">The original Phase 1 tasks, with the gaps patched in.</div>
+    <div class="task"><div class="box"></div><div class="task-txt">Schema: <code>SourceRef</code>, <code>EvidenceClaim</code>, <code>TradeoffDimension</code>, <code>MethodOption</code>, <code>ValidationExperiment</code>, <code>MethodDecisionDossier</code>, <code>MethodGraphEdge</code></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Keep <code>algorithm</code> / <code>implementation</code> / <code>version</code> as <b>separate</b> fields on <code>MethodOption</code> — never merged</div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Add <code>last_reviewed</code> + <code>reviewer</code> to <code>MethodGraphEdge</code>, not just to lifecycle status <span class="ref">GAP-08</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Add <code>human_decision</code> + <code>human_rationale</code> + <code>agreed_with_llm</code> to the dossier <span class="ref">GAP-06</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Add a <code>provenance</code> block: model, prompt_version, build_date, source_coverage, pkg_versions <span class="ref">GAP-07</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Fix verifier semantics: <code>None</code> renders as "human-must-check," surfaced beside <code>False</code> <span class="ref">GAP-04</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Build <code>build_dossier.py</code> as retrieval-then-synthesize (never one end-to-end LLM call)</div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Prompt MUST require every claim to carry a <code>source_ref</code> matching a retrieved source</div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Generate JSON + Markdown locally; no Notion write yet</div></div>
+  </div>
+
+  <!-- THEN -->
+  <div class="todo-group">
+    <div class="group-head"><span class="tag then">Do then</span><span class="gt">Validation before expansion</span></div>
+    <div class="group-desc">Don't add Stage 6/7 dossiers until these pass.</div>
+    <div class="task"><div class="box"></div><div class="task-txt">Build an eval harness: 2–3 golden dossiers with hand-graded recommendations + evidence sets <span class="ref">GAP-03</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Metric: does the build reproduce the human recommendation? does every claim resolve to a real source? <span class="ref">GAP-03</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Confirm the <code>sensitive_to</code> edge survived the build — i.e. the graph model held at N=2 <span class="ref">GAP-01</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Add the stale-edge CLI listing command <span class="ref">GAP-08</span></div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Revise schema once — then, and only then, add Stage 4 / 6 / 7 dossiers</div></div>
+    <div class="task"><div class="box"></div><div class="task-txt">Defer Notion export and the six-tier lifecycle enum until two real dossiers demand them</div></div>
+  </div>
+
+  <!-- ============ KEYSTONE ============ -->
+  <div class="keystone">
+    <div class="kicker">The one question that decides everything</div>
+    <h2>Who maintains the edges, and how often?</h2>
+    <p>Everything above is tractable engineering. This isn't — it's a discipline question, and it's the one your own scheme doc already identified as the failure mode: <strong>a beautiful graph that encodes wrong assumptions.</strong></p>
+    <p>A method-decision graph whose <code style="color:var(--accent)">sensitive_to</code> and <code style="color:var(--accent)">replaces_or_modernizes</code> edges aren't re-reviewed decays faster than a prose note — because it carries the visual authority of structure while quietly going false. Close <strong>GAP-08</strong> before you write <code style="color:var(--accent)">schema.py</code>, or the rest is scaffolding for a repo that ages into a liability.</p>
+  </div>
+
+  <div class="foot">
+    <span>methodintel_gaps_and_todo.html</span>
+    <span>8 gaps · 20 tasks · 4 router modes (was 5)</span>
+  </div>
+
+</div>
+
+<script>
+  const tasks = Array.from(document.querySelectorAll('.task'));
+  const fill = document.getElementById('fill');
+  const pct = document.getElementById('pct');
+  const frac = document.getElementById('frac');
+  const total = tasks.length;
+  function refresh(){
+    const done = document.querySelectorAll('.task.done').length;
+    const p = total ? Math.round(done/total*100) : 0;
+    fill.style.width = p + '%';
+    pct.textContent = p + '%';
+    frac.textContent = done + ' / ' + total;
+  }
+  tasks.forEach(t => t.addEventListener('click', () => { t.classList.toggle('done'); refresh(); }));
+  refresh();
+</script>
+</body>
+</html>

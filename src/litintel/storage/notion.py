@@ -4,7 +4,7 @@ import time
 import requests
 from typing import Dict, Any, List
 
-from litintel.enrich.schema import Tier1Record, Tier2Record
+from litintel.enrich.schema import Tier1Record
 
 logger = logging.getLogger(__name__)
 
@@ -92,54 +92,37 @@ def _build_tier1_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
     # Text Arrays (Multi-select)
     if rec.get("Theme"):
         props["Theme"] = {"multi_select": [{"name": t.strip()} for t in rec.get("Theme").split(";") if t.strip()]}
-    
+
     if rec.get("DataTypes"):
         # Clean up types
         dts = [t.strip().replace(",", "-") for t in rec.get("DataTypes").split(",") if t.strip()]
         props["DataTypes"] = {"multi_select": [{"name": d} for d in dts[:10]]} # Limit 10
 
-    return props
-
-def _build_tier2_properties(rec: Dict[str, Any]) -> Dict[str, Any]:
-    # Maps Tier2Record to Notion Properties (Methods Intelligence)
-    props = {
-        "Name": {"title": [{"text": {"content": truncate(rec.get("Title", "Untitled"))}}]},
-        "PMID": {"rich_text": [{"text": {"content": str(rec.get("PMID", ""))}}]},
-        "RelevanceScore": {"number": rec.get("RelevanceScore", 0)},
-        "WhyRelevant": {"rich_text": [{"text": {"content": truncate(rec.get("WhyRelevant", ""))}}]},
-        "StudySummary": {"rich_text": [{"text": {"content": truncate(rec.get("StudySummary", ""))}}]},
-        
-        # New Tier 2 Fields
-        "PI_Group": {"rich_text": [{"text": {"content": truncate(rec.get("PI_Group", ""))}}]},
-        "MethodName": {"rich_text": [{"text": {"content": truncate(rec.get("MethodName", ""))}}]},
-        "MethodRole": {"rich_text": [{"text": {"content": truncate(rec.get("MethodRole", ""))}}]},
-        "InputsRequired": {"rich_text": [{"text": {"content": truncate(rec.get("InputsRequired", ""))}}]},
-        "KeyParameters": {"rich_text": [{"text": {"content": truncate(rec.get("KeyParameters", ""))}}]},
-        "AssumptionsFailureModes": {"rich_text": [{"text": {"content": truncate(rec.get("AssumptionsFailureModes", ""))}}]},
-        "EvidenceContext": {"rich_text": [{"text": {"content": truncate(rec.get("EvidenceContext", ""))}}]},
-        
-        "PipelineConfidence": {"select": {"name": rec.get("PipelineConfidence", "Low")}},
-        "Year": {"number": int(rec.get("Year")) if rec.get("Year", "").isdigit() else None},
-    }
-    
-    # Controlled Vocabs
-    if rec.get("ProblemArea"):
-        props["ProblemArea"] = {"multi_select": [{"name": t.strip()} for t in rec.get("ProblemArea").split(";") if t.strip()]}
-        
-    if rec.get("DataTypes"):
-        dts = [t.strip().replace(",", "-") for t in rec.get("DataTypes").split(",") if t.strip()]
-        props["DataTypes"] = {"multi_select": [{"name": d} for d in dts[:10]]}
+    # Tier C (figure-grounded multimodal PDF enrichment) -- only emit when set.
+    # Pipeline records that did not run Tier C carry no TierC_* keys; we skip
+    # those quietly so Notion props stay clean.
+    if rec.get("TierC_Status"):
+        props["TierC_Status"] = {"select": {"name": rec.get("TierC_Status", "")[:100]}}
+        props["TierC_Source"] = {"select": {"name": rec.get("TierC_Source", "")[:100]}}
+        props["TierC_DriveLink"] = {"url": rec.get("TierC_DriveLink") or None}
+        props["TierC_FigureCount"] = {"number": int(rec.get("TierC_FigureCount", 0) or 0)}
+        props["TierC_AnchorCount"] = {"number": int(rec.get("TierC_AnchorCount", 0) or 0)}
+        props["TierC_MethodCount"] = {"number": int(rec.get("TierC_MethodCount", 0) or 0)}
+        props["TierC_TopFindings"] = {"rich_text": [{"text": {"content": truncate(rec.get("TierC_TopFindings", ""))}}]}
+        if rec.get("TierC_VerificationStatus"):
+            props["TierC_VerificationStatus"] = {"select": {"name": rec.get("TierC_VerificationStatus", "")[:100]}}
+        if rec.get("TierC_Error"):
+            props["TierC_Error"] = {"rich_text": [{"text": {"content": truncate(rec.get("TierC_Error", ""))}}]}
 
     return props
+
+
 
 def upsert_records(records: List[Dict[str, Any]], database_id: str, tier: int = 1):
     client = get_notion_client()
     
     for rec in records:
-        if tier == 1:
-            props = _build_tier1_properties(rec)
-        else:
-            props = _build_tier2_properties(rec)
+        props = _build_tier1_properties(rec)
             
         # Creating page (simplified: always create, no update check for now, can implement query check later)
         try:

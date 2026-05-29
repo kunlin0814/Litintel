@@ -68,6 +68,13 @@ class DriveConfig(BaseModel):
     enabled: bool = False
     folder_id_env: Optional[str] = None
     markdown_grouping: Optional[str] = None
+    papers_jsonl_file_id_env: Optional[str] = None
+    notebooklm_folder_id_env: Optional[str] = None
+    methods_folder_id_env: Optional[str] = None
+    upload_pdfs: bool = False
+    pdf_min_score: int = 88
+    pdf_folder_name: str = "PDFs"
+    pdf_folder_id_env: Optional[str] = None
 
 class MarkdownBundleConfig(BaseModel):
     enabled: bool = False
@@ -86,6 +93,20 @@ class StorageConfig(BaseModel):
 class DedupConfig(BaseModel):
     keys: List[str] = ["DOI", "PMID"]
 
+class TierCConfig(BaseModel):
+    """Tier C (figure-grounded multimodal PDF enrichment) settings."""
+    enabled: bool = False
+    model: str = "gemini-3.1-pro-preview"
+    thinking: str = "MEDIUM"
+    min_score: int = 90
+    inbox_folder_id_env: str = "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"
+    output_folder_id_env: str = "GOOGLE_DRIVE_TIERC_OUTPUT_FOLDER_ID"
+    process_inbox_in_cron: bool = True
+    max_size_mb: float = 18.0
+    chunk_pages: int = 25
+    max_chunks: int = 4
+    identity_model: str = "gemini-3.5-flash"
+
 class AppConfig(BaseModel):
     pipeline_tier: PipelineTier
     pipeline_name: str
@@ -93,6 +114,7 @@ class AppConfig(BaseModel):
     ai: AIConfig
     storage: StorageConfig
     dedup: DedupConfig
+    tier_c: Optional[TierCConfig] = None
 
 def load_config_from_yaml(path: str) -> AppConfig:
     import yaml
