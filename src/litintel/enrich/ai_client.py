@@ -16,7 +16,7 @@ except ImportError:
     OpenAI = None
 
 from litintel.config import AIConfig, AIProvider
-from litintel.enrich.schema import Tier1Record, Tier2Record
+from litintel.enrich.schema import Tier1Record
 
 logger = logging.getLogger(__name__)
 

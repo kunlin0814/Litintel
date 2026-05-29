@@ -73,18 +73,3 @@ class Tier1Record(BaseRecord):
     EscalationTriggered: bool = False
     EscalationReason: str = ""
 
-
-class Tier2Record(BaseRecord):
-    """Schema for Methods Discovery"""
-    RelevanceScore: int = 0
-    WhyRelevant: str = ""
-    StudySummary: str = ""
-    PI_Group: str = ""
-    ProblemArea: str = ""  # Multi-value allowed (semicolon sep)
-    MethodName: str = ""
-    MethodRole: str = ""
-    InputsRequired: str = ""
-    KeyParameters: str = ""
-    AssumptionsFailureModes: str = ""
-    EvidenceContext: str = ""
-    DataTypes: str = ""
