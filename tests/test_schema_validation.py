@@ -6,7 +6,7 @@ from pydantic import ValidationError
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from litintel.config import DriveConfig
-from litintel.enrich.schema import Tier2Record
+from litintel.enrich.schema import Tier1Record
 from litintel.pubmed.client import fetch_pmc_pdf_url, fetch_pmc_pdf
 
 
@@ -19,7 +19,7 @@ class MockResponse:
         return None
 
 class TestSchemaValidation(unittest.TestCase):
-    def test_valid_tier2_record(self):
+    def test_valid_tier1_record(self):
         data = {
             "PMID": "12345678",
             "Title": "Test Paper",
@@ -27,18 +27,15 @@ class TestSchemaValidation(unittest.TestCase):
             "RelevanceScore": 90,
             "WhyRelevant": "Relevant because...",
             "StudySummary": "Summary.",
-            "PI_Group": "Lab X",
-            "ProblemArea": "integration",
-            "MethodName": "ToolY",
-            "MethodRole": "Role Z",
-            "InputsRequired": "Data A",
-            "KeyParameters": "Param B",
-            "AssumptionsFailureModes": "None",
-            "EvidenceContext": "Simulated",
-            "DataTypes": "scRNA-seq"
+            "PaperRole": "Role Z",
+            "Theme": "Theme A",
+            "Methods": "Method B",
+            "KeyFindings": "Finding C",
+            "DataTypes": "scRNA-seq",
+            "Group": "Lab X"
         }
         # Should raise no error
-        rec = Tier2Record(**data)
+        rec = Tier1Record(**data)
         self.assertEqual(rec.PMID, "12345678")
 
     def test_invalid_relevance_score_type(self):
@@ -50,7 +47,7 @@ class TestSchemaValidation(unittest.TestCase):
             "RelevanceScore": "High", # Invalid
         }
         with self.assertRaises(ValidationError):
-            Tier2Record(**data)
+            Tier1Record(**data)
 
     def test_missing_required_field_defaults(self):
         # BaseRecord requires PMID, Title, Abstract. Others have defaults.
@@ -61,7 +58,7 @@ class TestSchemaValidation(unittest.TestCase):
             # Missing RelevanceScore, etc.
         }
         # Should pass because Pydantic models define defaults (0, "")
-        rec = Tier2Record(**data)
+        rec = Tier1Record(**data)
         self.assertEqual(rec.RelevanceScore, 0)
         
     def test_extra_fields_ignored_or_allowed(self):
@@ -72,7 +69,7 @@ class TestSchemaValidation(unittest.TestCase):
             "Abstract": "A",
             "ExtraField": "Should be ignored"
         }
-        rec = Tier2Record(**data)
+        rec = Tier1Record(**data)
         # Verify ExtraField is not on object if strict? 
         # By default pydantic ignores.
         self.assertFalse(hasattr(rec, "ExtraField"))

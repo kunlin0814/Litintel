@@ -143,10 +143,10 @@ class TestScoreFiltering:
         pmids = {r['PMID'] for r in eligible}
         assert pmids == {'1', '3'}
 
-    def test_default_threshold_is_70(self):
+    def test_default_threshold_is_85(self):
         """Verify the default constant."""
         from litintel.storage.rag_corpus import DEFAULT_MIN_SCORE
-        assert DEFAULT_MIN_SCORE == 70
+        assert DEFAULT_MIN_SCORE == 85
 
     def test_all_below_threshold(self):
         """When all records are below threshold, none are eligible."""
