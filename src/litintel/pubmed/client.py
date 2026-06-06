@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 import requests
@@ -9,9 +10,62 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
 
+# With API key: 10 req/s -> 0.11s sleep; without: 3 req/s -> 0.34s
+_RATE_LIMIT_DELAY_WITH_KEY = 0.11
+_RATE_LIMIT_DELAY_NO_KEY = 0.34
+_MAX_RETRIES = 3
+
+
+def _ncbi_params(extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Build base params dict with email and api_key from env vars."""
+    params: Dict[str, Any] = {
+        "email": os.environ.get("NCBI_EMAIL", "agent@deepmind.com"),
+    }
+    api_key = os.environ.get("NCBI_API_KEY")
+    if api_key:
+        params["api_key"] = api_key
+    if extra:
+        params.update(extra)
+    return params
+
+
+def _rate_delay() -> float:
+    """Return inter-request sleep in seconds based on API key presence."""
+    if os.environ.get("NCBI_API_KEY"):
+        return _RATE_LIMIT_DELAY_WITH_KEY
+    return _RATE_LIMIT_DELAY_NO_KEY
+
+
+def _request_with_retry(
+    method: str,
+    url: str,
+    *,
+    max_retries: int = _MAX_RETRIES,
+    **kwargs: Any,
+) -> requests.Response:
+    """HTTP request with exponential-backoff retry on 429.
+
+    Raises the last exception if all retries are exhausted.
+    """
+    for attempt in range(max_retries + 1):
+        resp = requests.request(method, url, **kwargs)
+        if resp.status_code != 429:
+            resp.raise_for_status()
+            return resp
+        if attempt < max_retries:
+            wait = 2 ** attempt  # 1s, 2s, 4s
+            logger.warning(
+                "NCBI 429 rate limit on %s -- retry %d/%d in %ds",
+                url.split("?")[0], attempt + 1, max_retries, wait,
+            )
+            time.sleep(wait)
+    # Final attempt was also 429 -- raise
+    resp.raise_for_status()
+    return resp  # unreachable, but keeps type checker happy
+
 def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: int = 0, email: str = "agent@deepmind.com") -> List[str]:
     # eSearch
-    params = {
+    params = _ncbi_params({
         "db": "pubmed",
         "term": query,
         "retmax": retmax,
@@ -19,13 +73,11 @@ def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: in
         "reldate": reldays,
         "datetype": "pdat",
         "sort": "relevance",
-        "email": email,
-        "retmode": "json" # JSON is easier for ID list
-    }
-    
+        "retmode": "json",  # JSON is easier for ID list
+    })
+
     try:
-        resp = requests.get(f"{BASE_URL}/esearch.fcgi", params=params, timeout=30)
-        resp.raise_for_status()
+        resp = _request_with_retry("GET", f"{BASE_URL}/esearch.fcgi", params=params, timeout=30)
         data = resp.json()
         ids = data.get("esearchresult", {}).get("idlist", [])
         logger.info(f"Found {len(ids)} papers for query: {query[:50]}...")
@@ -38,33 +90,31 @@ def fetch_details(pmids: List[str], email: str = "agent@deepmind.com", batch_siz
     """Fetch PubMed article details in batches (NCBI recommends max 200 IDs per request)."""
     if not pmids:
         return ""
-    
+
     all_xml_parts = []
-    
+    delay = _rate_delay()
+
     # Batch the PMIDs
     for i in range(0, len(pmids), batch_size):
         batch = pmids[i:i + batch_size]
         ids_str = ",".join(batch)
-        
-        params = {
+
+        params = _ncbi_params({
             "db": "pubmed",
             "id": ids_str,
             "retmode": "xml",
-            "email": email
-        }
-        
+        })
+
         try:
-            resp = requests.post(f"{BASE_URL}/efetch.fcgi", data=params, timeout=60)
-            resp.raise_for_status()
+            resp = _request_with_retry("POST", f"{BASE_URL}/efetch.fcgi", data=params, timeout=60)
             all_xml_parts.append(resp.text)
             logger.info(f"Fetched batch {i // batch_size + 1} ({len(batch)} PMIDs)")
         except Exception as e:
             logger.error(f"EFetch failed for batch starting at {i}: {e}")
             # Continue with other batches instead of failing completely
-        
-        # Rate limiting: NCBI recommends max 3 requests/second
+
         if i + batch_size < len(pmids):
-            time.sleep(0.34)
+            time.sleep(delay)
     
     if not all_xml_parts:
         return ""
@@ -91,36 +141,35 @@ def fetch_details(pmids: List[str], email: str = "agent@deepmind.com", batch_siz
 def fetch_pmc_fulltext(pmcids: List[str], email: str = "agent@deepmind.com", batch_size: int = 50) -> Dict[str, str]:
     """
     Fetch PMC full-text XML for given PMCIDs.
-    
+
     Args:
         pmcids: List of PMCIDs (with or without 'PMC' prefix)
         email: Email for E-utilities
         batch_size: Number of PMCIDs per batch
-        
+
     Returns:
         Dict mapping PMCID to raw PMC XML string
     """
     if not pmcids:
         return {}
-    
+
     results = {}
-    
+    delay = _rate_delay()
+
     for i in range(0, len(pmcids), batch_size):
         batch = pmcids[i:i + batch_size]
         # Strip 'PMC' prefix for the API
         ids_stripped = [p.replace("PMC", "") for p in batch]
-        
-        params = {
+
+        params = _ncbi_params({
             "db": "pmc",
             "retmode": "xml",
             "id": ",".join(ids_stripped),
-            "email": email
-        }
-        
+        })
+
         try:
-            resp = requests.get(f"{BASE_URL}/efetch.fcgi", params=params, timeout=120)
-            resp.raise_for_status()
-            
+            resp = _request_with_retry("GET", f"{BASE_URL}/efetch.fcgi", params=params, timeout=120)
+
             root = ET.fromstring(resp.text)
             for article in root.findall(".//article"):
                 # Extract PMCID from article
@@ -131,18 +180,17 @@ def fetch_pmc_fulltext(pmcids: List[str], email: str = "agent@deepmind.com", bat
                         if not pmcid.startswith("PMC"):
                             pmcid = "PMC" + pmcid
                         break
-                
+
                 if pmcid:
                     results[pmcid] = ET.tostring(article, encoding='unicode')
-            
+
             logger.info(f"Fetched PMC batch {i // batch_size + 1} ({len(batch)} PMCIDs)")
         except Exception as e:
             logger.error(f"PMC EFetch failed for batch starting at {i}: {e}")
-        
-        # Rate limiting
+
         if i + batch_size < len(pmcids):
-            time.sleep(0.34)
-    
+            time.sleep(delay)
+
     return results
 
 
