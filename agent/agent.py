@@ -15,9 +15,16 @@ import os
 from google.adk.agents import Agent
 from google.adk.tools.retrieval.vertex_ai_rag_retrieval import VertexAiRagRetrieval
 
+# Resource identifiers are deployment credentials -> .env.
+# Models and tuning knobs come from configs/*.yaml (rag_agent block).
 CORPUS_NAME = os.environ.get('VERTEX_RAG_CORPUS_NAME', '')
 PROJECT_ID = os.environ.get('GCP_PROJECT_ID', '')
-LOCATION = os.environ.get('GCP_LOCATION', 'us-central1')
+
+_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'configs', 'tier1_pca.yaml')
+from litintel.config import load_config_from_yaml
+
+_RAG_CFG = load_config_from_yaml(_CONFIG_PATH).rag_agent
+LOCATION = _RAG_CFG.location
 
 SYSTEM_INSTRUCTION = """\
 You are LitIntel Assistant, a computational biology research agent.
@@ -42,13 +49,13 @@ litintel_retrieval = VertexAiRagRetrieval(
         'method, gene, cell type, dataset, or any research question.'
     ),
     rag_corpora=[CORPUS_NAME],
-    similarity_top_k=10,
-    vector_distance_threshold=0.5,
+    similarity_top_k=_RAG_CFG.top_k,
+    vector_distance_threshold=_RAG_CFG.vector_distance_threshold,
 )
 
 root_agent = Agent(
     name='litintel_agent',
-    model='gemini-3.6-flash',
+    model=_RAG_CFG.model,
     description='Research assistant for prostate cancer and spatial omics literature',
     instruction=SYSTEM_INSTRUCTION,
     tools=[litintel_retrieval],

@@ -420,6 +420,7 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
                     records=valid_records,
                     corpus_name=corpus_name,
                     project_id=project_id,
+                    min_score=config.rag_agent.min_score,
                 )
             except Exception as e:
                 logger.error(f"RAG corpus sync failed: {e}")

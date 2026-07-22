@@ -149,3 +149,14 @@ storage:
 
 dedup:
   keys: ["DOI", "PMID"]
+
+# --- Vertex RAG corpus sync + NL query agent (agent/cli.py) ---
+# Resource IDs (VERTEX_RAG_CORPUS_NAME, GCP_PROJECT_ID) stay in .env -- they are
+# deployment credentials. Every model / tuning knob is here.
+rag_agent:
+  model: "gemini-3.6-flash"
+  thinking: "LOW"                  # NONE | LOW | MEDIUM | HIGH
+  location: "us-east5"             # Vertex location for LLM inference
+  top_k: 10                        # RAG chunks retrieved per question
+  vector_distance_threshold: 0.5
+  min_score: 85                    # min RelevanceScore to ingest into the corpus

@@ -110,6 +110,21 @@ class TierCConfig(BaseModel):
     max_chunks: int = 4
     identity_model: str = "gemini-3.6-flash"
 
+class RagAgentConfig(BaseModel):
+    """Vertex RAG corpus sync + the natural-language query agent (agent/cli.py).
+
+    Resource identifiers (corpus name, GCP project) stay in .env because they are
+    deployment credentials; every model and tuning knob lives here.
+    """
+    model: str = "gemini-3.6-flash"
+    thinking: str = "LOW"
+    location: str = "us-east5"
+    top_k: int = 10
+    vector_distance_threshold: float = 0.5
+    # Minimum RelevanceScore for a paper to be ingested into the RAG corpus.
+    min_score: int = 85
+
+
 class AppConfig(BaseModel):
     pipeline_tier: PipelineTier
     pipeline_name: str
@@ -118,6 +133,7 @@ class AppConfig(BaseModel):
     storage: StorageConfig
     dedup: DedupConfig
     tier_c: Optional[TierCConfig] = None
+    rag_agent: RagAgentConfig = Field(default_factory=RagAgentConfig)
 
 def load_config_from_yaml(path: str) -> AppConfig:
     import yaml
@@ -147,6 +163,11 @@ def load_config_from_yaml(path: str) -> AppConfig:
             "Config %s -- tier_c: %s/%s (identity: %s)",
             path, cfg.tier_c.model, cfg.tier_c.thinking, cfg.tier_c.identity_model,
         )
+    logger.info(
+        "Config %s -- rag_agent: %s/%s (min_score: %d, top_k: %d)",
+        path, cfg.rag_agent.model, cfg.rag_agent.thinking,
+        cfg.rag_agent.min_score, cfg.rag_agent.top_k,
+    )
 
     return cfg
 

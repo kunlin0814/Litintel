@@ -32,12 +32,21 @@ from google.genai import types
 from vertexai.preview import rag
 
 # -----------------------------------------------------------------------
-# Config from environment
+# Config
+#   Models and tuning knobs come from configs/*.yaml (rag_agent block).
+#   Only resource identifiers -- which are deployment credentials -- come
+#   from .env.
 # -----------------------------------------------------------------------
+DEFAULT_CONFIG = os.path.join(os.path.dirname(__file__), '..', 'configs', 'tier1_pca.yaml')
+
 PROJECT_ID = os.environ.get('GCP_PROJECT_ID', '')
-LOCATION = os.environ.get('GCP_LOCATION', 'us-east5')
 CORPUS_NAME = os.environ.get('VERTEX_RAG_CORPUS_NAME', '')
-MODEL = os.environ.get('RAG_AGENT_MODEL', 'gemini-3.6-flash')
+
+# Populated from the YAML in main(); module-level defaults keep import-time
+# access safe for anything that imports this module without calling main().
+RAG_CFG = None
+LOCATION = 'us-east5'
+MODEL = 'gemini-3.6-flash'
 
 SYSTEM_INSTRUCTION = """\
 You are LitIntel Assistant, a computational biology research agent.
@@ -58,10 +67,13 @@ Behavior rules:
 """
 
 
-def retrieve_chunks(question: str, top_k: int = 10) -> str:
+def retrieve_chunks(question: str, top_k: int = None) -> str:
     """Retrieve relevant chunks from Vertex AI RAG corpus."""
     import vertexai
-    
+
+    if top_k is None:
+        top_k = RAG_CFG.top_k if RAG_CFG else 10
+
     # Extract the RAG location from the fully qualified corpus name 
     # e.g., projects/123/locations/us-east5/ragCorpora/456 -> us-east5
     # Default to LOCATION if parsing fails
@@ -81,7 +93,9 @@ def retrieve_chunks(question: str, top_k: int = 10) -> str:
         ],
         text=question,
         similarity_top_k=top_k,
-        vector_distance_threshold=0.5,
+        vector_distance_threshold=(
+            RAG_CFG.vector_distance_threshold if RAG_CFG else 0.5
+        ),
     )
 
     # Format retrieved chunks into context string
@@ -168,18 +182,34 @@ def main():
         help='Run in interactive REPL mode',
     )
     parser.add_argument(
+        '--config',
+        default=DEFAULT_CONFIG,
+        help='YAML config supplying the rag_agent block (default: configs/tier1_pca.yaml)',
+    )
+    parser.add_argument(
         '--thinking',
-        default='LOW',
+        default=None,
         choices=['NONE', 'LOW', 'MEDIUM', 'HIGH'],
-        help='Thinking level for reasoning (default: LOW)',
+        help='Override rag_agent.thinking from the config for this run',
     )
     parser.add_argument(
         '--top-k',
         type=int,
-        default=10,
-        help='Number of RAG chunks to retrieve (default: 10)',
+        default=None,
+        help='Override rag_agent.top_k from the config for this run',
     )
     args = parser.parse_args()
+
+    # Load models / tuning from the YAML -- the single source of truth.
+    global RAG_CFG, MODEL, LOCATION
+    from litintel.config import load_config_from_yaml
+    RAG_CFG = load_config_from_yaml(args.config).rag_agent
+    MODEL = RAG_CFG.model
+    LOCATION = RAG_CFG.location
+    if args.thinking is None:
+        args.thinking = RAG_CFG.thinking
+    if args.top_k is None:
+        args.top_k = RAG_CFG.top_k
 
     # Validate env
     if not CORPUS_NAME:

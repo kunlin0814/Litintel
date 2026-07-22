@@ -55,12 +55,23 @@ single orchestration function is `run_tier1_pipeline()` in `src/litintel/pipelin
 behavior change.
 
 **Config is the contract.** `configs/*.yaml` -> `load_config_from_yaml()` -> Pydantic `AppConfig`
-(`src/litintel/config.py`). The YAML is the **single source of truth for models and thinking
-effort** -- there are deliberately no env-var overrides. An earlier override block let `.env`
-silently win over the committed config, so `tier1_pca.yaml` claimed `gemini-3.1-pro-preview`
+(`src/litintel/config.py`). The YAML is the **single source of truth for every model, thinking
+level, and threshold** -- pipeline (`ai:`), figure enrichment (`tier_c:`), and the RAG corpus +
+query agent (`rag_agent:`). There are deliberately **no env-var overrides**: an earlier
+override block let `.env` silently win, so `tier1_pca.yaml` claimed `gemini-3.1-pro-preview`
 for Pass 2 and Tier C while both actually ran on `gemini-3.6-flash`. Do not reintroduce it.
-`load_config_from_yaml()` logs the resolved models on every run; that log line is the
-authoritative record of what executed.
+`load_config_from_yaml()` logs every resolved model on each run; that log is the authoritative
+record of what executed.
+
+**The `.env` / YAML split:** `.env` holds only credentials and resource identifiers
+(`NCBI_*`, `NOTION_*`, `GOOGLE_*`, `GCP_PROJECT_ID`, `VERTEX_RAG_CORPUS_NAME`). Anything
+naming a model or tuning a behavior belongs in the YAML. `agent/cli.py` and `agent/agent.py`
+both read the `rag_agent` block rather than env.
+
+The pipeline is **Gemini-only** in practice (`ai.provider: gemini`); the OpenAI key was revoked
+2026-07-22. `enrich/ai_client.py` still carries an untested `AIProvider.OPENAI` branch and the
+`model_default`/`model_escalate` Pydantic defaults are stale OpenAI ids -- always set both
+explicitly in the YAML.
 
 ### The passes and their thresholds
 

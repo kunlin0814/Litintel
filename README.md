@@ -45,9 +45,8 @@ NCBI_EMAIL=your.email@institution.edu
 NOTION_TOKEN=secret_xxx
 NOTION_DB_ID=xxx
 
-# AI Provider
-OPENAI_API_KEY=sk-proj-xxx
-# OR: GOOGLE_API_KEY=xxx
+# AI provider credential (Gemini only -- provider is set in configs/*.yaml)
+GOOGLE_API_KEY=xxx
 
 # Google Drive (optional; personal Drive uses OAuth)
 GOOGLE_DRIVE_CLIENT_SECRET=/path/to/oauth-client-secret.json
