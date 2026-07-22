@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Environment and commands
+
+The package in `src/litintel/` is **not pip-installed**. The repo-root `venv/` is a bare
+interpreter (pip only) -- do not use it. The working interpreter is conda base, and the package
+is reached via `PYTHONPATH=src`:
+
+```bash
+# Tests (44 pass, 3 integration skipped) -- this is the verified invocation
+PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest -q
+
+# Single test file / single test
+PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest tests/test_methodintel_router.py -v
+PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest tests/test_schema_validation.py::test_name -v
+
+# Integration tests hit real APIs and are skipped unless explicitly enabled (see tests/conftest.py)
+PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest -q --run-integration
+
+# Pipeline / CLI
+PYTHONPATH=src python -m litintel.cli tier1 --config configs/tier1_pca.yaml --limit 5
+PYTHONPATH=src python -m litintel.cli validate configs/tier1_pca.yaml
+PYTHONPATH=src python -m litintel.cli methodintel route "Leiden vs Louvain for spatial ATAC"
+PYTHONPATH=src python -m litintel.cli tier-c inbox --dry-run
+PYTHONPATH=src python -m litintel.cli tier-c pmid 12345678
+
+# RAG query agent (separate entrypoint, needs gcloud ADC + GOOGLE_API_KEY)
+python agent/cli.py "What spatial ATAC papers cover CTCF in prostate cancer?"
+```
+
+`pytest` config lives in `pyproject.toml` (`testpaths=["tests"]`, `norecursedirs` excludes
+`legacy/`). Pre-commit runs `detect-secrets` against `.secrets.baseline`.
+
+## Architecture
+
+LitIntel is a **tiered, YAML-driven literature enrichment pipeline**: PubMed discovery -> PMC
+full-text -> multi-pass AI enrichment -> fan-out to Notion / Drive / CSV / Vertex RAG. The
+single orchestration function is `run_tier1_pipeline()` in `src/litintel/pipeline/tier1.py`
+(~440 lines); everything else is a module it calls. Read that file first to understand any
+behavior change.
+
+**Config is the contract.** `configs/*.yaml` -> `load_config_from_yaml()` -> Pydantic `AppConfig`
+(`src/litintel/config.py`). That loader also applies **env-var overrides** for models and
+thinking levels (`PASS1_MODEL_FULLTEXT`, `PASS1_THINKING_ABSTRACT`, `PASS2_MODEL`,
+`TIERC_MODEL`, ...) -- so a model in the YAML is a default, not a guarantee. Adding a config
+knob means touching the Pydantic model *and* the override block.
+
+### The passes and their thresholds
+
+| Stage | Trigger | Model role | Code |
+|---|---|---|---|
+| Pass 1 scoring | every record | `pass1_model_abstract` / `pass1_model_fulltext` | `enrich/ai_client.py::enrich_record` |
+| Pass 2 methods | `RelevanceScore >= pass2_min_score` (88) + full-text | `pass2_model` | `enrich/ai_client.py::enrich_pass2_methods` |
+| Tier C (figures) | auto: score `>= 90` + PMCID; or manual Drive inbox | `tier_c.model` (multimodal) | `tierc/engine.py` |
+| Drive PDF upload | score `>= pdf_min_score` (88) | -- | `storage/drive.py` |
+| RAG corpus sync | score `>= 85` (`DEFAULT_MIN_SCORE`) | -- | `storage/rag_corpus.py` |
+
+**Processing order is load-bearing, not incidental.** Pass 1 deliberately processes
+abstract-only records *first*, then full-text records grouped together, to keep the Gemini
+prompt cache warm (~50% input-cost reduction). Pass 2 then runs as a parallel batch
+(ThreadPoolExecutor, 3 workers). Do not reorder or interleave these without accounting for the
+cost model.
+
+**Escalation heuristics** (`enrich/escalation_heuristics.py::should_escalate`) emit signals
+H1-H5 (short rationale, score-near-threshold, text/score mismatch, high-relevance/low-reuse,
+direct high-score). They feed a Shadow Judge path in `ai_client.py` that is **only partially
+implemented** -- treat it as scaffolding, not a working second opinion.
+
+### Subsystems
+
+- `pubmed/client.py` -- NCBI E-Utilities with rate limiting and retry. Search is paginated in
+  batches of 200 (deep pagination up to ~1000) so already-seen PMIDs can be skipped cheaply.
+- `storage/notion.py` -- `build_notion_index()` produces a `PMID -> page_id` map used as the
+  **primary dedup gate before any AI spend**. All text properties are truncated to 2000 chars
+  for the Notion API.
+- `storage/drive.py` -- writes `papers.jsonl` plus score-bucketed Markdown for NotebookLM.
+  Prefers exact file/folder IDs from `.env` over name lookup; without those IDs it will create
+  duplicate folders/files.
+- `tierc/` -- three-stage multimodal engine (Evidence Map -> Synthesis -> Verification), each
+  stage anchored to figure IDs. Large PDFs are chunked (~25 pages). See `docs/tier_c_readme.md`.
+- `methodintel/` -- deterministic (non-AI) router: question -> `RouterMode` -> `ArtifactType` +
+  source plan + verify items. Alias tables in `router.py` are the extension point. Design docs
+  in `docs/methodintel_plan.md`, `docs/methodintel_artifacts.md`.
+- `agent/` -- separate ADK/CLI RAG agent over the Vertex RAG corpus. Not part of the pipeline.
+- `utils/run_log.py` -- appends per-run audit rows to `run_history.csv`.
+- `.deployment/` -- Prefect flow (`biweekly_flow.py`) wrapping the tier1 run for scheduling.
+
+### Two independent Google credentials (recurring source of bugs)
+
+- `GOOGLE_APPLICATION_CREDENTIALS` (service account / ADC) -> Vertex AI, Gemini-on-GCP, RAG.
+- `GOOGLE_DRIVE_CLIENT_SECRET` + cached `token_drive.json` (user OAuth) -> personal Drive writes.
+
+These are not interchangeable. A GCP service account cannot write to personal Drive even when
+the folder is shared with it. Re-auth with `python scripts/auth/auth_google_drive.py`.
+Details: `docs/gcp_credentials_guide.md`, `docs/google_drive_setup.md`.
+
+## Conventions and gotchas
+
+- **ASCII only** in code, comments, and AI prompt templates (the agent system prompts enforce
+  this too). No emoji, no Unicode dashes/arrows.
+- `legacy/` is the retired Prefect flat-file implementation, kept for reference only and
+  excluded from pytest. Never import from it or "fix" it.
+- **Tier 2 has been removed** from the pipeline (`pipeline/tier2.py` no longer exists) but
+  `README.md` and the `PipelineTier` enum still mention it. Trust the CLI in `src/litintel/cli.py`
+  over the README where they disagree.
+- `.gitignore` swallows `*.csv`, `scripts/test_*.py`, `scripts/generate_*.py`, `dev/*`, and
+  `AGENTS.md` -- a new script matching those patterns will silently not be tracked.
+- Prompt behavior lives in `enrich/prompt_templates.py` (scoring + methods instructions,
+  controlled `DataTypes` vocab, GEO/SRA "only if from THIS study" rule). Changing scoring
+  behavior almost always means editing a prompt string, not Python logic.
+- Schema changes ripple: `enrich/schema.py` (Pydantic) -> Gemini structured-output schema ->
+  Notion property mapping in `storage/notion.py` -> CSV columns. Update all four.
