@@ -117,7 +117,39 @@ class AppConfig(BaseModel):
     tier_c: Optional[TierCConfig] = None
 
 def load_config_from_yaml(path: str) -> AppConfig:
+    import os
     import yaml
+    from dotenv import load_dotenv
+    load_dotenv()
+
     with open(path, "r") as f:
         raw = yaml.safe_load(f)
+
+    # Environment variable overrides for AI models and thinking effort levels
+    if "ai" in raw and isinstance(raw["ai"], dict):
+        if os.getenv("PASS1_MODEL_FULLTEXT"):
+            raw["ai"]["pass1_model_fulltext"] = os.getenv("PASS1_MODEL_FULLTEXT")
+        if os.getenv("PASS1_THINKING_FULLTEXT"):
+            raw["ai"]["pass1_thinking_fulltext"] = os.getenv("PASS1_THINKING_FULLTEXT")
+        if os.getenv("PASS1_MODEL_ABSTRACT"):
+            raw["ai"]["pass1_model_abstract"] = os.getenv("PASS1_MODEL_ABSTRACT")
+        if os.getenv("PASS1_THINKING_ABSTRACT"):
+            raw["ai"]["pass1_thinking_abstract"] = os.getenv("PASS1_THINKING_ABSTRACT")
+        if os.getenv("PASS2_MODEL"):
+            raw["ai"]["pass2_model"] = os.getenv("PASS2_MODEL")
+        if os.getenv("PASS2_THINKING"):
+            raw["ai"]["pass2_thinking"] = os.getenv("PASS2_THINKING")
+        if os.getenv("MODEL_DEFAULT"):
+            raw["ai"]["model_default"] = os.getenv("MODEL_DEFAULT")
+        if os.getenv("MODEL_ESCALATE"):
+            raw["ai"]["model_escalate"] = os.getenv("MODEL_ESCALATE")
+
+    if "tier_c" in raw and isinstance(raw["tier_c"], dict):
+        if os.getenv("TIERC_MODEL"):
+            raw["tier_c"]["model"] = os.getenv("TIERC_MODEL")
+        if os.getenv("TIERC_THINKING"):
+            raw["tier_c"]["thinking"] = os.getenv("TIERC_THINKING")
+
     return AppConfig(**raw)
+
+
