@@ -16,6 +16,7 @@ import requests
 from pydantic import ValidationError
 
 from litintel.enrich.ai_client import _call_gemini_multimodal, _get_gemini_client
+from litintel.pubmed.client import _ncbi_params
 from litintel.tierc.pdf_io import build_multimodal_parts, split_pdf_by_pages
 from litintel.tierc.prompts import IDENTITY_SYSTEM, IDENTITY_USER
 from litintel.tierc.schema import Identity
@@ -122,13 +123,12 @@ def resolve_pmid_from_doi(doi: str) -> Optional[str]:
     if not cleaned or not cleaned.startswith("10."):
         return None
 
-    params = {
+    params = _ncbi_params({
         "db": "pubmed",
         "term": f"{cleaned}[doi]",
         "retmax": 1,
         "retmode": "json",
-        "email": "agent@deepmind.com",
-    }
+    })
     try:
         resp = requests.get(_EUTILS_ESEARCH, params=params, timeout=30)
         resp.raise_for_status()

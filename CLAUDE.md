@@ -4,12 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Environment and commands
 
-The package in `src/litintel/` is **not pip-installed**. The repo-root `venv/` is a bare
-interpreter (pip only) -- do not use it. The working interpreter is conda base, and the package
-is reached via `PYTHONPATH=src`:
+The package in `src/litintel/` is **not pip-installed**, and the repo-root `venv/` is an empty
+shell -- it was recreated with `python -m venv --clear` at the current path and never
+repopulated, so it holds only `pip`.
+
+Two interpreters, and the split matters:
+
+- **conda base** (`/Users/kun-linho/miniforge3/bin/python`) runs the **test suite** but
+  **cannot run the pipeline** -- it is missing `dotenv`, `notion_client`, `openai`,
+  `googleapiclient`, and `pypdf`. `import litintel.cli` fails there on `dotenv`.
+- **a populated venv** is required for any actual pipeline/CLI run:
+  `venv/bin/pip install -r requirements.txt -r requirements_litintel.txt && venv/bin/pip install -e .`
+  (the `-e .` also removes the need for `PYTHONPATH=src`).
 
 ```bash
-# Tests (44 pass, 3 integration skipped) -- this is the verified invocation
+# Tests (46 pass, 3 integration skipped) -- this is the verified invocation
 PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest -q
 
 # Single test file / single test
@@ -105,8 +114,14 @@ Details: `docs/gcp_credentials_guide.md`, `docs/google_drive_setup.md`.
 - **Tier 2 has been removed** from the pipeline (`pipeline/tier2.py` no longer exists) but
   `README.md` and the `PipelineTier` enum still mention it. Trust the CLI in `src/litintel/cli.py`
   over the README where they disagree.
-- `.gitignore` swallows `*.csv`, `scripts/test_*.py`, `scripts/generate_*.py`, `dev/*`, and
-  `AGENTS.md` -- a new script matching those patterns will silently not be tracked.
+- `.gitignore` swallows `*.csv`, `scripts/test_*.py`, `scripts/generate_*.py`, and `dev/*` --
+  a new script matching those patterns will silently not be tracked.
+- **NCBI credentials are env-only.** `pubmed/client.py::_ncbi_params()` is the single source for
+  the `email` + `api_key` query params and **raises** if `NCBI_EMAIL` is unset -- never
+  reintroduce a placeholder fallback, it misattributes NCBI traffic. `_rate_delay()` returns
+  0.11s when `NCBI_API_KEY` is present (10 req/s) and 0.34s otherwise (3 req/s), and
+  `_request_with_retry()` backs off on 429. Any new E-utilities call must go through these,
+  not raw `requests.get`.
 - Prompt behavior lives in `enrich/prompt_templates.py` (scoring + methods instructions,
   controlled `DataTypes` vocab, GEO/SRA "only if from THIS study" rule). Changing scoring
   behavior almost always means editing a prompt string, not Python logic.

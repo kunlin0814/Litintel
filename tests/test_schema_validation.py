@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src'
 
 from litintel.config import DriveConfig
 from litintel.enrich.schema import Tier1Record
-from litintel.pubmed.client import fetch_pmc_pdf_url, fetch_pmc_pdf
+from litintel.pubmed.client import _ncbi_params, fetch_pmc_pdf_url, fetch_pmc_pdf
 
 
 class MockResponse:
@@ -149,12 +149,33 @@ def test_fetch_pmc_pdf_tries_deprecated_fallback(monkeypatch):
             return MockResponse("", content=b"%PDF test")
         raise RuntimeError("legacy path unavailable")
 
+    monkeypatch.setenv("NCBI_EMAIL", "test@example.org")
     monkeypatch.setattr("litintel.pubmed.client.requests.get", mock_get)
 
     pdf = fetch_pmc_pdf("PMC123")
 
     assert pdf == b"%PDF test"
     assert any("/deprecated/" in url for url in calls)
+
+
+def test_ncbi_params_requires_email(monkeypatch):
+    """NCBI_EMAIL is mandatory -- a placeholder fallback would misattribute traffic."""
+    monkeypatch.delenv("NCBI_EMAIL", raising=False)
+    try:
+        _ncbi_params()
+    except ValueError as exc:
+        assert "NCBI_EMAIL" in str(exc)
+    else:
+        raise AssertionError("_ncbi_params() must raise when NCBI_EMAIL is unset")
+
+
+def test_ncbi_params_includes_api_key_when_set(monkeypatch):
+    monkeypatch.setenv("NCBI_EMAIL", "test@example.org")
+    monkeypatch.setenv("NCBI_API_KEY", "dummy-key")  # pragma: allowlist secret
+    params = _ncbi_params({"db": "pubmed"})
+    assert params["email"] == "test@example.org"
+    assert params["api_key"] == "dummy-key"  # pragma: allowlist secret
+    assert params["db"] == "pubmed"
 
 if __name__ == "__main__":
     unittest.main()

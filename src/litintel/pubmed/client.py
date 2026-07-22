@@ -16,10 +16,25 @@ _RATE_LIMIT_DELAY_NO_KEY = 0.34
 _MAX_RETRIES = 3
 
 
+def _ncbi_email() -> str:
+    """Return NCBI_EMAIL from env, or raise if unset.
+
+    NCBI requires a contact email on E-utilities requests. Falling back to a
+    placeholder would misattribute this traffic, so an unset value is fatal.
+    """
+    email = os.environ.get("NCBI_EMAIL")
+    if not email:
+        raise ValueError(
+            "NCBI_EMAIL not set. Add it to .env -- NCBI requires a contact "
+            "email for E-utilities requests."
+        )
+    return email
+
+
 def _ncbi_params(extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build base params dict with email and api_key from env vars."""
     params: Dict[str, Any] = {
-        "email": os.environ.get("NCBI_EMAIL", "agent@deepmind.com"),
+        "email": _ncbi_email(),
     }
     api_key = os.environ.get("NCBI_API_KEY")
     if api_key:
@@ -63,7 +78,7 @@ def _request_with_retry(
     resp.raise_for_status()
     return resp  # unreachable, but keeps type checker happy
 
-def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: int = 0, email: str = "agent@deepmind.com") -> List[str]:
+def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: int = 0) -> List[str]:
     # eSearch
     params = _ncbi_params({
         "db": "pubmed",
@@ -86,7 +101,7 @@ def search_pubmed(query: str, retmax: int = 30, reldays: int = 365, retstart: in
         logger.error(f"ESearch failed for {query}: {e}")
         return []
 
-def fetch_details(pmids: List[str], email: str = "agent@deepmind.com", batch_size: int = 200) -> str:
+def fetch_details(pmids: List[str], batch_size: int = 200) -> str:
     """Fetch PubMed article details in batches (NCBI recommends max 200 IDs per request)."""
     if not pmids:
         return ""
@@ -138,13 +153,12 @@ def fetch_details(pmids: List[str], email: str = "agent@deepmind.com", batch_siz
         return all_xml_parts[0] if all_xml_parts else ""
 
 
-def fetch_pmc_fulltext(pmcids: List[str], email: str = "agent@deepmind.com", batch_size: int = 50) -> Dict[str, str]:
+def fetch_pmc_fulltext(pmcids: List[str], batch_size: int = 50) -> Dict[str, str]:
     """
     Fetch PMC full-text XML for given PMCIDs.
 
     Args:
         pmcids: List of PMCIDs (with or without 'PMC' prefix)
-        email: Email for E-utilities
         batch_size: Number of PMCIDs per batch
 
     Returns:
@@ -272,7 +286,6 @@ def fetch_pmc_pdf_url(
 
 def fetch_pmc_pdf(
     pmcid: str,
-    email: str = "agent@deepmind.com",
     timeout: int = 120,
 ) -> Optional[bytes]:
     """
@@ -280,7 +293,6 @@ def fetch_pmc_pdf(
 
     Args:
         pmcid: PMCID with or without the "PMC" prefix.
-        email: Contact email included in the user agent.
         timeout: Request timeout in seconds.
 
     Returns:
@@ -291,7 +303,7 @@ def fetch_pmc_pdf(
     if not pdf_url:
         return None
 
-    headers = {"User-Agent": f"LitIntel/0.1 ({email})"}
+    headers = {"User-Agent": f"LitIntel/0.1 ({_ncbi_email()})"}
 
     content = b""
     last_error = None
