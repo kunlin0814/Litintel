@@ -45,8 +45,13 @@ NCBI_EMAIL=your.email@institution.edu
 NOTION_TOKEN=secret_xxx
 NOTION_DB_ID=xxx
 
-# AI provider credential (Gemini only -- provider is set in configs/*.yaml)
-GOOGLE_API_KEY=xxx
+# AI provider credential. Gemini only; the provider itself is set in configs/*.yaml.
+# Default is Vertex AI mode, authenticated by ADC:
+#     gcloud auth application-default login
+USE_VERTEX_AI=true
+GCP_LOCATION=global
+# Set USE_VERTEX_AI=false to use the API-key path instead, which needs:
+# GOOGLE_API_KEY=xxx
 
 # Google Drive (optional; personal Drive uses OAuth)
 GOOGLE_DRIVE_CLIENT_SECRET=/path/to/oauth-client-secret.json

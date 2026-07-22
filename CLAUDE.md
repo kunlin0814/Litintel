@@ -69,9 +69,18 @@ naming a model or tuning a behavior belongs in the YAML. `agent/cli.py` and `age
 both read the `rag_agent` block rather than env.
 
 The pipeline is **Gemini-only** in practice (`ai.provider: gemini`); the OpenAI key was revoked
-2026-07-22. `enrich/ai_client.py` still carries an untested `AIProvider.OPENAI` branch and the
-`model_default`/`model_escalate` Pydantic defaults are stale OpenAI ids -- always set both
-explicitly in the YAML.
+2026-07-22. `enrich/ai_client.py` still carries an unexercised `AIProvider.OPENAI` branch --
+**keep it.** It is not dead code to clean up: the intended direction is to route through
+CLIProxyAPI so gemini / codex / claude can each serve enrichment, and the `AIProvider` enum plus
+the provider dispatch in `enrich_record()` / `enrich_pass2_methods()` are the extension point
+for that. The `model_default`/`model_escalate` Pydantic defaults are stale OpenAI ids, so always
+set both explicitly in the YAML.
+
+Verified Gemini path (2026-07-22): Vertex AI mode (`USE_VERTEX_AI=true`) with ADC, project from
+`GCP_PROJECT_ID`, `GCP_LOCATION=global`. `GOOGLE_API_KEY` is unset and
+`GOOGLE_APPLICATION_CREDENTIALS` is commented out, so auth comes from
+`gcloud auth application-default login` -- if enrichment starts failing on credentials, refresh
+ADC before suspecting the code.
 
 ### The passes and their thresholds
 
