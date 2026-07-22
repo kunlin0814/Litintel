@@ -187,3 +187,66 @@ class TestGetCompMethodsSummary:
         from litintel.storage.rag_corpus import _get_comp_methods_summary
         comp = {'tags': ['scATAC']}
         assert _get_comp_methods_summary(comp) == ''
+
+
+# ---------------------------------------------------------------------------
+# Upload retry
+# ---------------------------------------------------------------------------
+
+class _FakeRag:
+    """Stands in for vertexai.preview.rag -- fails N times, then succeeds."""
+
+    def __init__(self, failures, exc=None):
+        self.failures = failures
+        self.calls = 0
+        self.exc = exc or RuntimeError(
+            'Failed in uploading the RagFile due to: ', ConnectionError('boom')
+        )
+
+    def upload_file(self, **kwargs):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise self.exc
+        return 'uploaded'
+
+
+class TestUploadRetry:
+    """rag.upload_file has no retry and no timeout; we wrap it."""
+
+    def test_succeeds_after_transient_failures(self, monkeypatch):
+        from litintel.storage import rag_corpus
+        monkeypatch.setattr(rag_corpus.time, 'sleep', lambda _: None)
+        fake = _FakeRag(failures=2)
+        result = rag_corpus._upload_file_with_retry(
+            fake, corpus_name='c', path='/tmp/x.txt',
+            display_name='12345678', description='d',
+        )
+        assert result == 'uploaded'
+        assert fake.calls == 3
+
+    def test_raises_after_exhausting_retries(self, monkeypatch):
+        from litintel.storage import rag_corpus
+        monkeypatch.setattr(rag_corpus.time, 'sleep', lambda _: None)
+        fake = _FakeRag(failures=99)
+        with pytest.raises(RuntimeError):
+            rag_corpus._upload_file_with_retry(
+                fake, corpus_name='c', path='/tmp/x.txt',
+                display_name='12345678', description='d',
+                max_retries=3,
+            )
+        assert fake.calls == 4  # initial attempt + 3 retries
+
+    def test_retries_the_json_decode_failure_mode(self, monkeypatch):
+        """The SDK surfaces empty error bodies as a JSON parse error."""
+        import json
+        from litintel.storage import rag_corpus
+        monkeypatch.setattr(rag_corpus.time, 'sleep', lambda _: None)
+        fake = _FakeRag(
+            failures=1,
+            exc=json.JSONDecodeError('Expecting value', '', 0),
+        )
+        assert rag_corpus._upload_file_with_retry(
+            fake, corpus_name='c', path='/tmp/x.txt',
+            display_name='12345678', description='d',
+        ) == 'uploaded'
+        assert fake.calls == 2

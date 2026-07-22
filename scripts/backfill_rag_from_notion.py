@@ -161,10 +161,15 @@ def main():
         description='Backfill Vertex AI RAG corpus from Notion database'
     )
     parser.add_argument(
+        '--config',
+        default=os.path.join(os.path.dirname(__file__), '..', 'configs', 'tier1_pca.yaml'),
+        help='YAML config supplying rag_agent.min_score (default: configs/tier1_pca.yaml)',
+    )
+    parser.add_argument(
         '--min-score',
         type=int,
-        default=80,
-        help='Minimum RelevanceScore for RAG inclusion (default: 80)',
+        default=None,
+        help='Override rag_agent.min_score from the config for this run',
     )
     parser.add_argument(
         '--dry-run',
@@ -172,6 +177,12 @@ def main():
         help='Preview what would be uploaded without actually uploading',
     )
     args = parser.parse_args()
+
+    # Threshold comes from the YAML so the backfill cannot drift from the
+    # pipeline's own ingest gate.
+    if args.min_score is None:
+        from litintel.config import load_config_from_yaml
+        args.min_score = load_config_from_yaml(args.config).rag_agent.min_score
 
     # Validate env
     notion_token = os.environ.get('NOTION_TOKEN')

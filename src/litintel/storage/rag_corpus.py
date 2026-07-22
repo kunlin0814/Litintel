@@ -15,6 +15,7 @@
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -23,6 +24,17 @@ logger = logging.getLogger(__name__)
 # Default minimum RelevanceScore for RAG corpus inclusion.
 # Papers below this threshold are too noisy to be useful for retrieval.
 DEFAULT_MIN_SCORE = 85
+
+# rag.upload_file() has no retry and no request timeout. Two distinct transient
+# failures are known to surface from it:
+#   1. RuntimeError("Failed in uploading the RagFile due to: ", ConnectionError(...))
+#      -- the POST itself raised (remote closed the connection).
+#   2. json.JSONDecodeError "Expecting value: line 1 column 1 (char 0)"
+#      -- the POST returned a non-404 error with an empty/non-JSON body, and the
+#      SDK calls response.json() unguarded.
+# A dropped upload is permanent: the paper is already in Notion, so the next run
+# dedups it out of the PubMed search and never re-offers it to the corpus.
+_UPLOAD_MAX_RETRIES = 3
 
 
 # ===========================================================================
@@ -136,6 +148,38 @@ def _format_rag_document(rec: Dict[str, Any]) -> str:
         ]
 
     return "\n".join(lines)
+
+
+def _upload_file_with_retry(
+    rag,
+    corpus_name: str,
+    path: str,
+    display_name: str,
+    description: str,
+    max_retries: int = _UPLOAD_MAX_RETRIES,
+):
+    """Call rag.upload_file with exponential backoff on transient failures.
+
+    Raises the last exception if every attempt fails, so the caller still
+    counts it as an error rather than silently dropping the document.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return rag.upload_file(
+                corpus_name=corpus_name,
+                path=path,
+                display_name=display_name,
+                description=description,
+            )
+        except Exception as exc:
+            if attempt >= max_retries:
+                raise
+            wait = 2 ** attempt  # 1s, 2s, 4s
+            logger.warning(
+                "RAG upload failed for %s (attempt %d/%d) -- retrying in %ds: %s",
+                display_name, attempt + 1, max_retries, wait, exc,
+            )
+            time.sleep(wait)
 
 
 def _build_corpus_index(corpus_name: str) -> Dict[str, str]:
@@ -280,7 +324,8 @@ def upsert_to_rag_corpus(
 
             # Upload to RAG corpus
             try:
-                rag.upload_file(
+                _upload_file_with_retry(
+                    rag,
                     corpus_name=corpus_name,
                     path=str(doc_file),
                     display_name=pmid,
@@ -303,6 +348,16 @@ def upsert_to_rag_corpus(
         skipped,
         errors,
     )
+    if errors:
+        # Loud on purpose: these papers are already in Notion, so the pipeline
+        # will dedup them out of future runs and never retry them here.
+        # Recover with scripts/backfill_rag_from_notion.py.
+        logger.warning(
+            "RAG upsert: %d document(s) failed after %d retries and are NOT in the "
+            "corpus. They will not be retried automatically -- run "
+            "scripts/backfill_rag_from_notion.py to recover them.",
+            errors, _UPLOAD_MAX_RETRIES,
+        )
 
 
 #================================================================
