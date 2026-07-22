@@ -106,7 +106,7 @@ tier_c:
 # deployment credentials. Every model / tuning knob is here.
 rag_agent:
   model: "gemini-3.6-flash"
-  thinking: "LOW"                  # NONE | LOW | MEDIUM | HIGH
+  thinking: "MEDIUM"                  # NONE | LOW | MEDIUM | HIGH
   location: "us-east5"             # Vertex location for LLM inference
   top_k: 10                        # RAG chunks retrieved per question
   vector_distance_threshold: 0.5
