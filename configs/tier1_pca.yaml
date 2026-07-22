@@ -37,13 +37,17 @@ discovery:
 
 ai:
   provider: gemini
+  # This file is the ONLY source of truth for models and thinking effort.
+  # There are no environment-variable overrides -- edit the values here.
+  model_default: "gemini-3.6-flash"          # Pass 1 fallback + run-log ai_model
+  model_escalate: "gemini-3.6-flash"         # Escalation / malformed-JSON retry
   # Two-Pass Architecture Config
   pass1_model_fulltext: "gemini-3.6-flash"   # Pass 1 (Scoring) if Full Text
-  pass1_thinking_fulltext: "MEDIUM"                   # Thinking level for full-text scoring
+  pass1_thinking_fulltext: "HIGH"            # Thinking level for full-text scoring
   pass1_model_abstract: "gemini-3.6-flash"   # Pass 1 (Scoring) if Abstract Only
-  pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
-  pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods extraction)
-  pass2_thinking: "MEDIUM"                             # Thinking level for methods extraction
+  pass1_thinking_abstract: "MEDIUM"          # Thinking level for abstract scoring
+  pass2_model: "gemini-3.6-flash"            # Pass 2 (Methods extraction)
+  pass2_thinking: "HIGH"                     # Thinking level for methods extraction
   pass2_min_score: 88                 # Trigger threshold for Pass 2 (score >= 88)
 
   max_chars: 80000
@@ -86,8 +90,8 @@ dedup:
 
 tier_c:
   enabled: true
-  model: "gemini-3.1-pro-preview"
-  thinking: "MEDIUM"
+  model: "gemini-3.6-flash"
+  thinking: "HIGH"
   min_score: 90                                # auto path: only papers >= this score with a PMC OA PDF
   inbox_folder_id_env: "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"
   output_folder_id_env: "GOOGLE_DRIVE_TIERC_OUTPUT_FOLDER_ID"

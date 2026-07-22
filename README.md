@@ -166,7 +166,7 @@ The pipeline uses a cache-optimized two-pass system:
 
 ### Pass 2: Methods Extraction (Batched)
 - Triggers only for papers with **Score >= 88** and full-text availability
-- Uses `gemini-3.1-pro-preview` with LOW thinking for structured extraction
+- Uses `gemini-3.6-flash` with HIGH thinking for structured extraction
 - Runs in **parallel** (ThreadPoolExecutor, max 3 workers) to keep prompt cache warm
 - Extracts `comp_methods` with structured `analyses` blocks
 
@@ -177,10 +177,13 @@ ai:
   pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
   pass1_model_abstract: "gemini-3.6-flash"   # Pass 1 if Abstract Only
   pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
-  pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods)
-  pass2_thinking: "LOW"                             # Thinking level for methods extraction
+  pass2_model: "gemini-3.6-flash"                  # Pass 2 (Methods)
+  pass2_thinking: "HIGH"                            # Thinking level for methods extraction
   pass2_min_score: 88                 # Trigger threshold for Pass 2
 ```
+
+These YAML values are authoritative -- there are no environment-variable overrides.
+Every run logs the models it resolved, so the log is the record of what executed.
 
 ---
 

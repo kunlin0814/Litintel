@@ -55,10 +55,12 @@ single orchestration function is `run_tier1_pipeline()` in `src/litintel/pipelin
 behavior change.
 
 **Config is the contract.** `configs/*.yaml` -> `load_config_from_yaml()` -> Pydantic `AppConfig`
-(`src/litintel/config.py`). That loader also applies **env-var overrides** for models and
-thinking levels (`PASS1_MODEL_FULLTEXT`, `PASS1_THINKING_ABSTRACT`, `PASS2_MODEL`,
-`TIERC_MODEL`, ...) -- so a model in the YAML is a default, not a guarantee. Adding a config
-knob means touching the Pydantic model *and* the override block.
+(`src/litintel/config.py`). The YAML is the **single source of truth for models and thinking
+effort** -- there are deliberately no env-var overrides. An earlier override block let `.env`
+silently win over the committed config, so `tier1_pca.yaml` claimed `gemini-3.1-pro-preview`
+for Pass 2 and Tier C while both actually ran on `gemini-3.6-flash`. Do not reintroduce it.
+`load_config_from_yaml()` logs the resolved models on every run; that log line is the
+authoritative record of what executed.
 
 ### The passes and their thresholds
 

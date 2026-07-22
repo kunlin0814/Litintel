@@ -27,7 +27,8 @@ Both paths write the same artifact shape and Notion fields.
 
 ## Three-stage engine
 
-All three stages use `gemini-3.1-pro-preview` with multimodal (Stage 1) or text-only input.
+All three stages use the `tier_c.model` from `configs/*.yaml` (currently `gemini-3.6-flash`)
+with multimodal (Stage 1) or text-only input.
 
 ```
 Stage 1: Evidence Map
@@ -211,7 +212,7 @@ Check that:
 ```yaml
 tier_c:
   enabled: true          # set false to disable globally
-  model: "gemini-3.1-pro-preview"
+  model: "gemini-3.6-flash"
   thinking: "MEDIUM"
   min_score: 90          # only auto-path papers >= this get Tier C
   inbox_folder_id_env: "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"

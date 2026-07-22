@@ -41,7 +41,7 @@ ai:
   pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
   pass1_model_abstract: "gemini-3.6-flash"   # Pass 1 (Scoring) if Abstract Only
   pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
-  pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods extraction)
+  pass2_model: "gemini-3.6-flash"                  # Pass 2 (Methods extraction)
   pass2_thinking: "LOW"                             # Thinking level for methods extraction
   pass2_min_score: 88                 # Trigger threshold for Pass 2
 
@@ -102,7 +102,7 @@ To maximize Gemini prompt caching (~50% cost reduction):
 
 1. **Abstract-only papers** processed first with `gemini-3.6-flash` (MEDIUM thinking)
 2. **Full-text papers** processed second with `gemini-3.6-flash` (HIGH thinking)
-3. **Pass 2** runs in parallel batch after all Pass 1 completes, using `gemini-3.1-pro-preview` (LOW thinking)
+3. **Pass 2** runs in parallel batch after all Pass 1 completes, using `gemini-3.6-flash` (HIGH thinking)
 
 ---
 

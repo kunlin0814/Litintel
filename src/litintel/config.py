@@ -1,6 +1,9 @@
+import logging
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 class PipelineTier(int, Enum):
     TIER1 = 1
@@ -117,39 +120,34 @@ class AppConfig(BaseModel):
     tier_c: Optional[TierCConfig] = None
 
 def load_config_from_yaml(path: str) -> AppConfig:
-    import os
     import yaml
     from dotenv import load_dotenv
+
+    # Still needed: credentials and Drive/Notion IDs come from .env.
     load_dotenv()
 
     with open(path, "r") as f:
         raw = yaml.safe_load(f)
 
-    # Environment variable overrides for AI models and thinking effort levels
-    if "ai" in raw and isinstance(raw["ai"], dict):
-        if os.getenv("PASS1_MODEL_FULLTEXT"):
-            raw["ai"]["pass1_model_fulltext"] = os.getenv("PASS1_MODEL_FULLTEXT")
-        if os.getenv("PASS1_THINKING_FULLTEXT"):
-            raw["ai"]["pass1_thinking_fulltext"] = os.getenv("PASS1_THINKING_FULLTEXT")
-        if os.getenv("PASS1_MODEL_ABSTRACT"):
-            raw["ai"]["pass1_model_abstract"] = os.getenv("PASS1_MODEL_ABSTRACT")
-        if os.getenv("PASS1_THINKING_ABSTRACT"):
-            raw["ai"]["pass1_thinking_abstract"] = os.getenv("PASS1_THINKING_ABSTRACT")
-        if os.getenv("PASS2_MODEL"):
-            raw["ai"]["pass2_model"] = os.getenv("PASS2_MODEL")
-        if os.getenv("PASS2_THINKING"):
-            raw["ai"]["pass2_thinking"] = os.getenv("PASS2_THINKING")
-        if os.getenv("MODEL_DEFAULT"):
-            raw["ai"]["model_default"] = os.getenv("MODEL_DEFAULT")
-        if os.getenv("MODEL_ESCALATE"):
-            raw["ai"]["model_escalate"] = os.getenv("MODEL_ESCALATE")
+    # The YAML file is the single source of truth for models and thinking effort.
+    # Env vars deliberately do NOT override it -- a silent env override made the
+    # committed config unreliable to read. Change models by editing configs/*.yaml.
+    cfg = AppConfig(**raw)
 
-    if "tier_c" in raw and isinstance(raw["tier_c"], dict):
-        if os.getenv("TIERC_MODEL"):
-            raw["tier_c"]["model"] = os.getenv("TIERC_MODEL")
-        if os.getenv("TIERC_THINKING"):
-            raw["tier_c"]["thinking"] = os.getenv("TIERC_THINKING")
+    logger.info(
+        "Config %s -- pass1: %s/%s (fulltext) %s/%s (abstract) | pass2: %s/%s | escalate: %s",
+        path,
+        cfg.ai.pass1_model_fulltext, cfg.ai.pass1_thinking_fulltext,
+        cfg.ai.pass1_model_abstract, cfg.ai.pass1_thinking_abstract,
+        cfg.ai.pass2_model, cfg.ai.pass2_thinking,
+        cfg.ai.model_escalate,
+    )
+    if cfg.tier_c and cfg.tier_c.enabled:
+        logger.info(
+            "Config %s -- tier_c: %s/%s (identity: %s)",
+            path, cfg.tier_c.model, cfg.tier_c.thinking, cfg.tier_c.identity_model,
+        )
 
-    return AppConfig(**raw)
+    return cfg
 
 
