@@ -17,6 +17,13 @@ from google.adk.tools.retrieval.vertex_ai_rag_retrieval import VertexAiRagRetrie
 
 # Resource identifiers are deployment credentials -> .env.
 # Models and tuning knobs come from configs/*.yaml (rag_agent block).
+#
+# NOTE: the corpus lives in a personal GCP project while GCP_PROJECT_ID names
+# the company project used for Gemini. VertexAiRagRetrieval below resolves the
+# corpus from its fully qualified name but authenticates with the ambient ADC
+# and exposes no hook for RAG_CREDENTIALS_JSON, so `adk web` only works when
+# the shell is authenticated against the corpus project. The cli.py entrypoint
+# handles the split correctly -- prefer it when the two projects differ.
 CORPUS_NAME = os.environ.get('VERTEX_RAG_CORPUS_NAME', '')
 PROJECT_ID = os.environ.get('GCP_PROJECT_ID', '')
 

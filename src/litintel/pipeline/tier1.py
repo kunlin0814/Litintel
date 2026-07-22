@@ -408,24 +408,21 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
             except Exception:
                 logger.exception("Tier C [inbox]: failed (continuing)")
 
-    # RAG Corpus Sync (if VERTEX_RAG_CORPUS_NAME is set)
+    # RAG Corpus Sync (if VERTEX_RAG_CORPUS_NAME is set).
+    # The RAG project comes from the corpus name, not GCP_PROJECT_ID -- the
+    # corpus lives in a personal project while Gemini runs on the company one.
     corpus_name = os.environ.get("VERTEX_RAG_CORPUS_NAME")
     if corpus_name:
-        project_id = os.environ.get("GCP_PROJECT_ID")
-        if project_id:
-            try:
-                from litintel.storage.rag_corpus import upsert_to_rag_corpus
-                logger.info("Syncing to Vertex AI RAG corpus...")
-                upsert_to_rag_corpus(
-                    records=valid_records,
-                    corpus_name=corpus_name,
-                    project_id=project_id,
-                    min_score=config.rag_agent.min_score,
-                )
-            except Exception as e:
-                logger.error(f"RAG corpus sync failed: {e}")
-        else:
-            logger.warning("GCP_PROJECT_ID not set -- skipping RAG sync")
+        try:
+            from litintel.storage.rag_corpus import upsert_to_rag_corpus
+            logger.info("Syncing to Vertex AI RAG corpus...")
+            upsert_to_rag_corpus(
+                records=valid_records,
+                corpus_name=corpus_name,
+                min_score=config.rag_agent.min_score,
+            )
+        except Exception as e:
+            logger.error(f"RAG corpus sync failed: {e}")
 
     # Log execution
     append_run_log(

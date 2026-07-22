@@ -122,14 +122,41 @@ implemented** -- treat it as scaffolding, not a working second opinion.
 - `utils/run_log.py` -- appends per-run audit rows to `run_history.csv`.
 - `.deployment/` -- Prefect flow (`biweekly_flow.py`) wrapping the tier1 run for scheduling.
 
-### Two independent Google credentials (recurring source of bugs)
+### Three independent Google credentials, in two GCP projects
 
-- `GOOGLE_APPLICATION_CREDENTIALS` (service account / ADC) -> Vertex AI, Gemini-on-GCP, RAG.
-- `GOOGLE_DRIVE_CLIENT_SECRET` + cached `token_drive.json` (user OAuth) -> personal Drive writes.
+Gemini inference runs on the **company** project; the RAG corpus and Drive live in the
+**personal** account. Nothing is shared between them.
 
-These are not interchangeable. A GCP service account cannot write to personal Drive even when
-the folder is shared with it. Re-auth with `python scripts/auth/auth_google_drive.py`.
+| Concern | Credential | Project |
+|---|---|---|
+| Gemini / Vertex inference | ambient ADC (`gcloud auth application-default login`) + `GCP_PROJECT_ID` | company (`prj-kun-cpdr-prod-nsmc`) |
+| Vertex RAG corpus | `RAG_CREDENTIALS_JSON` service-account key | personal (`kun-gcp-proj`, number `1040326808351`) |
+| Personal Drive writes | `GOOGLE_DRIVE_CLIENT_SECRET` + cached `token_drive.json` (user OAuth) | personal |
+
+**RAG never reads `GCP_PROJECT_ID`.** Its project and region come from parsing
+`VERTEX_RAG_CORPUS_NAME` (`storage/rag_corpus.py::parse_corpus_name`), and it authenticates
+through `rag_credentials()` / `init_rag()`. Pointing `GCP_PROJECT_ID` at the corpus project is
+the old broken arrangement -- it forced Gemini and RAG onto one account. `upsert_to_rag_corpus`
+still accepts `project_id=` for call compatibility but logs and ignores it.
+
+These credentials are not interchangeable. A GCP service account cannot write to personal Drive
+even when the folder is shared with it. Re-auth with `python scripts/auth/auth_google_drive.py`.
 Details: `docs/gcp_credentials_guide.md`, `docs/google_drive_setup.md`.
+
+**Do not call `vertexai.preview.rag.upload_file()`.** It is broken for this deployment in two
+independent ways, both confirmed against the live API on 2026-07-22:
+
+1. It calls `google.auth.default()` internally, discarding the credentials passed to
+   `vertexai.init()`. With a cross-project corpus every upload returns 403
+   `IAM_PERMISSION_DENIED` on `aiplatform.ragFiles.upload`.
+2. It posts to `/upload/v1beta1/`, which stalls and dies with `RemoteDisconnected` after ~60s.
+   The identical multipart POST to `/upload/v1/` returns 200 in 7-30s.
+
+`storage/rag_corpus.py::_upload_file_rest` issues that `/upload/v1/` POST directly with explicit
+credentials, a timeout, and retry/backoff. Read paths (`rag.list_files`, `rag.delete_file`,
+`rag.retrieval_query`) are GAPIC-based and *do* honour `vertexai.init(credentials=...)`, so they
+are fine. `agent/agent.py` (ADK `VertexAiRagRetrieval`) exposes no credential hook and only works
+when the shell ADC matches the corpus project -- prefer `agent/cli.py`, which handles the split.
 
 ## Conventions and gotchas
 

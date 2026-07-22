@@ -12,29 +12,122 @@
 #================================================================
 """
 
+import json
 import logging
 import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Scope required for every Vertex AI / RAG call.
+_CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
 # Default minimum RelevanceScore for RAG corpus inclusion.
 # Papers below this threshold are too noisy to be useful for retrieval.
 DEFAULT_MIN_SCORE = 85
 
-# rag.upload_file() has no retry and no request timeout. Two distinct transient
-# failures are known to surface from it:
-#   1. RuntimeError("Failed in uploading the RagFile due to: ", ConnectionError(...))
-#      -- the POST itself raised (remote closed the connection).
-#   2. json.JSONDecodeError "Expecting value: line 1 column 1 (char 0)"
-#      -- the POST returned a non-404 error with an empty/non-JSON body, and the
-#      SDK calls response.json() unguarded.
-# A dropped upload is permanent: the paper is already in Notion, so the next run
-# dedups it out of the PubMed search and never re-offers it to the corpus.
+# Uploads go through _upload_file_rest() rather than
+# vertexai.preview.rag.upload_file(), which is broken for this deployment in
+# two independent ways (both confirmed against the live API 2026-07-22):
+#   1. It calls google.auth.default() internally, ignoring the credentials
+#      handed to vertexai.init(). With the corpus in a personal project and
+#      the shell authenticated to the company project, every upload returned
+#      403 IAM_PERMISSION_DENIED on aiplatform.ragFiles.upload.
+#   2. It posts to /upload/v1beta1/, which stalls and then dies with
+#      RemoteDisconnected after ~60s. The same multipart POST to /upload/v1/
+#      returns 200 in 7-30s.
+# It also has no request timeout and no retry. A dropped upload is permanent:
+# the paper is already in Notion, so the next run dedups it out of the PubMed
+# search and never re-offers it to the corpus.
 _UPLOAD_MAX_RETRIES = 3
+_UPLOAD_TIMEOUT_SECONDS = 180
+
+
+# ===========================================================================
+# Project / credential resolution
+#
+# The RAG corpus and Gemini inference deliberately live in DIFFERENT GCP
+# projects: Gemini runs on the company project (GCP_PROJECT_ID + ambient ADC)
+# while the corpus lives in a personal project. So RAG must never read
+# GCP_PROJECT_ID and must never rely on the ambient credential -- it derives
+# its project from the corpus resource name and authenticates with the key in
+# RAG_CREDENTIALS_JSON.
+# ===========================================================================
+
+def parse_corpus_name(corpus_name: str) -> Tuple[str, str]:
+    """Split a RAG corpus resource name into (project_id, location).
+
+    Args:
+        corpus_name: projects/{project}/locations/{loc}/ragCorpora/{id}
+
+    Returns:
+        (project_id, location) parsed from the name.
+
+    Raises:
+        ValueError: The name does not match the expected resource format.
+            Guessing a project here would silently target the wrong account,
+            so a malformed name is fatal.
+    """
+    parts = corpus_name.split("/")
+    if len(parts) < 6 or parts[0] != "projects" or parts[2] != "locations":
+        raise ValueError(
+            "VERTEX_RAG_CORPUS_NAME is malformed: %r. Expected "
+            "projects/{project}/locations/{location}/ragCorpora/{id}"
+            % corpus_name
+        )
+    return parts[1], parts[3]
+
+
+def rag_credentials():
+    """Return explicit credentials for the RAG project, or None for ADC.
+
+    RAG_CREDENTIALS_JSON points at a service-account key for the project that
+    owns the corpus. When unset, the ambient ADC is used -- correct only when
+    the corpus lives in the same project the shell is authenticated against.
+
+    Raises:
+        FileNotFoundError: RAG_CREDENTIALS_JSON is set but does not exist.
+    """
+    key_path = os.environ.get("RAG_CREDENTIALS_JSON")
+    if not key_path:
+        return None
+    if not os.path.exists(key_path):
+        raise FileNotFoundError(
+            "RAG_CREDENTIALS_JSON points at a missing file: %s" % key_path
+        )
+    from google.oauth2 import service_account
+
+    return service_account.Credentials.from_service_account_file(
+        key_path, scopes=[_CLOUD_PLATFORM_SCOPE]
+    )
+
+
+def init_rag(corpus_name: str, location: Optional[str] = None) -> Tuple[str, str]:
+    """Point the vertexai global config at the corpus's own project + credential.
+
+    Args:
+        corpus_name: Full RAG corpus resource name.
+        location: Override for the region; defaults to the one in the name.
+
+    Returns:
+        (project_id, location) that were applied.
+    """
+    import vertexai
+
+    project_id, parsed_location = parse_corpus_name(corpus_name)
+    location = location or parsed_location
+    creds = rag_credentials()
+    vertexai.init(project=project_id, location=location, credentials=creds)
+    logger.info(
+        "RAG target: project=%s location=%s (credential: %s)",
+        project_id,
+        location,
+        "RAG_CREDENTIALS_JSON" if creds else "ambient ADC",
+    )
+    return project_id, location
 
 
 # ===========================================================================
@@ -150,26 +243,90 @@ def _format_rag_document(rec: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _upload_file_with_retry(
-    rag,
+def _upload_file_rest(
     corpus_name: str,
     path: str,
     display_name: str,
     description: str,
+    credentials=None,
+    timeout: int = _UPLOAD_TIMEOUT_SECONDS,
+) -> Dict[str, Any]:
+    """Upload one file to a RAG corpus with a direct multipart POST.
+
+    This deliberately bypasses vertexai.preview.rag.upload_file(), which has
+    two defects that make it unusable here (see _UPLOAD_TIMEOUT_SECONDS note):
+    it calls google.auth.default() directly -- discarding the credentials given
+    to vertexai.init() -- and it posts to /upload/v1beta1/.
+
+    Returns:
+        The decoded ragFile resource dict.
+
+    Raises:
+        RuntimeError: Non-2xx response, carrying the server's error body.
+    """
+    import google.auth.transport.requests as google_auth_requests
+    import requests
+
+    project_id, location = parse_corpus_name(corpus_name)
+    if credentials is None:
+        import google.auth
+
+        credentials, _ = google.auth.default(scopes=[_CLOUD_PLATFORM_SCOPE])
+    credentials.refresh(google_auth_requests.Request())
+
+    url = "https://{}-aiplatform.googleapis.com/upload/v1/{}/ragFiles:upload".format(
+        location, corpus_name
+    )
+    metadata = {"rag_file": {"display_name": display_name}}
+    if description:
+        metadata["rag_file"]["description"] = description
+
+    with open(path, "rb") as fh:
+        response = requests.post(
+            url,
+            headers={
+                "Authorization": "Bearer %s" % credentials.token,
+                "X-Goog-Upload-Protocol": "multipart",
+            },
+            files={
+                "metadata": (None, json.dumps(metadata), "application/json; charset=UTF-8"),
+                "file": (os.path.basename(path), fh, "text/plain"),
+            },
+            timeout=timeout,
+        )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "RAG upload failed with HTTP %d: %s"
+            % (response.status_code, response.text[:500])
+        )
+    body = response.json()
+    if body.get("error"):
+        raise RuntimeError("RAG upload returned an error: %s" % body["error"])
+    return body.get("ragFile", body)
+
+
+def _upload_file_with_retry(
+    corpus_name: str,
+    path: str,
+    display_name: str,
+    description: str,
+    credentials=None,
     max_retries: int = _UPLOAD_MAX_RETRIES,
 ):
-    """Call rag.upload_file with exponential backoff on transient failures.
+    """Upload with exponential backoff on transient failures.
 
     Raises the last exception if every attempt fails, so the caller still
     counts it as an error rather than silently dropping the document.
     """
     for attempt in range(max_retries + 1):
         try:
-            return rag.upload_file(
+            return _upload_file_rest(
                 corpus_name=corpus_name,
                 path=path,
                 display_name=display_name,
                 description=description,
+                credentials=credentials,
             )
         except Exception as exc:
             if attempt >= max_retries:
@@ -217,7 +374,7 @@ def _build_corpus_index(corpus_name: str) -> Dict[str, str]:
 def upsert_to_rag_corpus(
     records: List[Dict[str, Any]],
     corpus_name: str,
-    project_id: str,
+    project_id: str = None,
     location: str = None,
     min_score: int = DEFAULT_MIN_SCORE,
     force_update: bool = False,
@@ -238,27 +395,28 @@ def upsert_to_rag_corpus(
         corpus_name: Full RAG corpus resource name.
             Format: projects/{project}/locations/{loc}/ragCorpora/{id}
             Set via VERTEX_RAG_CORPUS_NAME environment variable.
-        project_id: GCP project ID. Set via GCP_PROJECT_ID env var.
-        location: GCP region where the corpus is hosted (default: us-central1).
-        min_score: Minimum RelevanceScore for RAG inclusion (default: 70).
+        project_id: Ignored. The project is read from corpus_name so RAG stays
+            on its own account regardless of GCP_PROJECT_ID (which targets the
+            company project used for Gemini). Accepted only for call
+            compatibility.
+        location: GCP region override; defaults to the one in corpus_name.
+        min_score: Minimum RelevanceScore for RAG inclusion (default: 85).
         force_update: If True, delete + re-upload existing documents.
     """
-    import vertexai
     from vertexai.preview import rag  # VERIFY: requires google-cloud-aiplatform >= 1.49.0
 
     if not records:
         logger.info("RAG upsert: no records to process")
         return
 
-    # Extract location from corpus_name (projects/{project}/locations/{loc}/ragCorpora/{id})
-    if not location:
-        parts = corpus_name.split("/")
-        if len(parts) >= 6 and parts[2] == "locations":
-            location = parts[3]
-        else:
-            location = "us-central1"
-
-    vertexai.init(project=project_id, location=location)
+    rag_project, location = init_rag(corpus_name, location)
+    if project_id and project_id != rag_project:
+        logger.info(
+            "Ignoring project_id=%s -- the RAG corpus lives in %s. Gemini and "
+            "RAG deliberately use different projects.",
+            project_id, rag_project,
+        )
+    credentials = rag_credentials()
 
     # Filter to records meeting quality threshold
     eligible = [r for r in records if r.get("RelevanceScore", 0) >= min_score]
@@ -325,11 +483,11 @@ def upsert_to_rag_corpus(
             # Upload to RAG corpus
             try:
                 _upload_file_with_retry(
-                    rag,
                     corpus_name=corpus_name,
                     path=str(doc_file),
                     display_name=pmid,
                     description=f"Score:{score} | {title}",
+                    credentials=credentials,
                 )
                 if pmid in existing_index:
                     logger.info("Updated  RAG doc: PMID %s (score=%d)", pmid, score)

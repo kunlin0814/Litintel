@@ -69,23 +69,15 @@ Behavior rules:
 
 def retrieve_chunks(question: str, top_k: int = None) -> str:
     """Retrieve relevant chunks from Vertex AI RAG corpus."""
-    import vertexai
-
     if top_k is None:
         top_k = RAG_CFG.top_k if RAG_CFG else 10
 
-    # Extract the RAG location from the fully qualified corpus name 
-    # e.g., projects/123/locations/us-east5/ragCorpora/456 -> us-east5
-    # Default to LOCATION if parsing fails
-    rag_location = LOCATION
-    if CORPUS_NAME and 'locations/' in CORPUS_NAME:
-        try:
-            parts = CORPUS_NAME.split('/')
-            rag_location = parts[parts.index('locations') + 1]
-        except (ValueError, IndexError):
-            pass
+    # Project, location, and credential all come from the corpus itself --
+    # the corpus lives in a personal GCP project while Gemini inference below
+    # runs on the company project via GCP_PROJECT_ID + ambient ADC.
+    from litintel.storage.rag_corpus import init_rag
 
-    vertexai.init(project=PROJECT_ID, location=rag_location)
+    init_rag(CORPUS_NAME)
 
     response = rag.retrieval_query(
         rag_resources=[

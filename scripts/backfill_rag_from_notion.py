@@ -188,10 +188,10 @@ def main():
     notion_token = os.environ.get('NOTION_TOKEN')
     notion_db_id = os.environ.get('NOTION_DB_ID')
     corpus_name = os.environ.get('VERTEX_RAG_CORPUS_NAME')
-    project_id = os.environ.get('GCP_PROJECT_ID')
-    # NOTE: location is derived from VERTEX_RAG_CORPUS_NAME inside
-    # upsert_to_rag_corpus(), not from GCP_LOCATION (which is 'global'
-    # for Gemini model access).
+    # NOTE: project, location, and credential are all derived from
+    # VERTEX_RAG_CORPUS_NAME inside upsert_to_rag_corpus(). GCP_PROJECT_ID and
+    # GCP_LOCATION belong to the company project used for Gemini and must not
+    # be applied to the corpus.
 
     missing = []
     if not notion_token:
@@ -200,8 +200,6 @@ def main():
         missing.append('NOTION_DB_ID')
     if not corpus_name:
         missing.append('VERTEX_RAG_CORPUS_NAME')
-    if not project_id:
-        missing.append('GCP_PROJECT_ID')
     if missing:
         print(f'ERROR: Missing env vars: {", ".join(missing)}')
         sys.exit(1)
@@ -244,7 +242,6 @@ def main():
     upsert_to_rag_corpus(
         records=eligible,
         corpus_name=corpus_name,
-        project_id=project_id,
         min_score=args.min_score,
     )
 

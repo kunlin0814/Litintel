@@ -4,6 +4,8 @@ Tests _format_rag_document() and score filtering logic.
 All tests use mocks -- no real GCP API calls.
 """
 
+import sys
+
 import pytest
 
 
@@ -193,17 +195,17 @@ class TestGetCompMethodsSummary:
 # Upload retry
 # ---------------------------------------------------------------------------
 
-class _FakeRag:
-    """Stands in for vertexai.preview.rag -- fails N times, then succeeds."""
+class _FakeUploader:
+    """Stands in for _upload_file_rest -- fails N times, then succeeds."""
 
     def __init__(self, failures, exc=None):
         self.failures = failures
         self.calls = 0
         self.exc = exc or RuntimeError(
-            'Failed in uploading the RagFile due to: ', ConnectionError('boom')
+            'RAG upload failed with HTTP 503: unavailable'
         )
 
-    def upload_file(self, **kwargs):
+    def __call__(self, **kwargs):
         self.calls += 1
         if self.calls <= self.failures:
             raise self.exc
@@ -211,14 +213,15 @@ class _FakeRag:
 
 
 class TestUploadRetry:
-    """rag.upload_file has no retry and no timeout; we wrap it."""
+    """The upload POST has no retry of its own; we wrap it."""
 
     def test_succeeds_after_transient_failures(self, monkeypatch):
         from litintel.storage import rag_corpus
         monkeypatch.setattr(rag_corpus.time, 'sleep', lambda _: None)
-        fake = _FakeRag(failures=2)
+        fake = _FakeUploader(failures=2)
+        monkeypatch.setattr(rag_corpus, '_upload_file_rest', fake)
         result = rag_corpus._upload_file_with_retry(
-            fake, corpus_name='c', path='/tmp/x.txt',
+            corpus_name='c', path='/tmp/x.txt',
             display_name='12345678', description='d',
         )
         assert result == 'uploaded'
@@ -227,26 +230,90 @@ class TestUploadRetry:
     def test_raises_after_exhausting_retries(self, monkeypatch):
         from litintel.storage import rag_corpus
         monkeypatch.setattr(rag_corpus.time, 'sleep', lambda _: None)
-        fake = _FakeRag(failures=99)
+        fake = _FakeUploader(failures=99)
+        monkeypatch.setattr(rag_corpus, '_upload_file_rest', fake)
         with pytest.raises(RuntimeError):
             rag_corpus._upload_file_with_retry(
-                fake, corpus_name='c', path='/tmp/x.txt',
+                corpus_name='c', path='/tmp/x.txt',
                 display_name='12345678', description='d',
                 max_retries=3,
             )
         assert fake.calls == 4  # initial attempt + 3 retries
 
-    def test_retries_the_json_decode_failure_mode(self, monkeypatch):
-        """The SDK surfaces empty error bodies as a JSON parse error."""
-        import json
+    def test_retries_the_connection_drop_failure_mode(self, monkeypatch):
+        """The upload endpoint drops connections under load."""
         from litintel.storage import rag_corpus
         monkeypatch.setattr(rag_corpus.time, 'sleep', lambda _: None)
-        fake = _FakeRag(
-            failures=1,
-            exc=json.JSONDecodeError('Expecting value', '', 0),
-        )
+        fake = _FakeUploader(failures=1, exc=ConnectionError('remote closed'))
+        monkeypatch.setattr(rag_corpus, '_upload_file_rest', fake)
         assert rag_corpus._upload_file_with_retry(
-            fake, corpus_name='c', path='/tmp/x.txt',
+            corpus_name='c', path='/tmp/x.txt',
             display_name='12345678', description='d',
         ) == 'uploaded'
         assert fake.calls == 2
+
+
+class TestCorpusProjectResolution:
+    """RAG must target the corpus's own project, never GCP_PROJECT_ID."""
+
+    def test_parses_project_and_location(self):
+        from litintel.storage.rag_corpus import parse_corpus_name
+        project, location = parse_corpus_name(
+            'projects/kun-gcp-proj/locations/us-east5/ragCorpora/123'
+        )
+        assert project == 'kun-gcp-proj'
+        assert location == 'us-east5'
+
+    def test_accepts_a_project_number(self):
+        from litintel.storage.rag_corpus import parse_corpus_name
+        project, _ = parse_corpus_name(
+            'projects/1040326808351/locations/us-east5/ragCorpora/123'
+        )
+        assert project == '1040326808351'
+
+    @pytest.mark.parametrize('bad', [
+        'ragCorpora/123',
+        'projects/p/ragCorpora/123',
+        '',
+    ])
+    def test_rejects_a_malformed_name(self, bad):
+        """Guessing a project would silently target the wrong account."""
+        from litintel.storage.rag_corpus import parse_corpus_name
+        with pytest.raises(ValueError):
+            parse_corpus_name(bad)
+
+    def test_gcp_project_id_cannot_redirect_the_corpus(self, monkeypatch):
+        """Setting GCP_PROJECT_ID to the company project must not move RAG."""
+        import litintel.storage.rag_corpus as rag_corpus
+        monkeypatch.setenv('GCP_PROJECT_ID', 'prj-kun-cpdr-prod-nsmc')
+        monkeypatch.delenv('RAG_CREDENTIALS_JSON', raising=False)
+        captured = {}
+
+        class _FakeVertexai:
+            @staticmethod
+            def init(project, location, credentials):
+                captured['project'] = project
+                captured['location'] = location
+
+        monkeypatch.setitem(sys.modules, 'vertexai', _FakeVertexai)
+        rag_corpus.init_rag(
+            'projects/kun-gcp-proj/locations/us-east5/ragCorpora/123'
+        )
+        assert captured['project'] == 'kun-gcp-proj'
+        assert captured['location'] == 'us-east5'
+
+
+class TestRagCredentials:
+    """RAG_CREDENTIALS_JSON selects the corpus project's service account."""
+
+    def test_returns_none_without_the_env_var(self, monkeypatch):
+        from litintel.storage.rag_corpus import rag_credentials
+        monkeypatch.delenv('RAG_CREDENTIALS_JSON', raising=False)
+        assert rag_credentials() is None
+
+    def test_raises_on_a_missing_key_file(self, monkeypatch):
+        """Silently falling back to ADC would hit the wrong project."""
+        from litintel.storage.rag_corpus import rag_credentials
+        monkeypatch.setenv('RAG_CREDENTIALS_JSON', '/nonexistent/key.json')
+        with pytest.raises(FileNotFoundError):
+            rag_credentials()
