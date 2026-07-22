@@ -220,7 +220,7 @@ tier_c:
   max_size_mb: 18.0      # PDFs above this are chunked
   chunk_pages: 25        # pages per chunk
   max_chunks: 4          # cap at 4 chunks (~100 pages total)
-  identity_model: "gemini-3.5-flash"  # cheap model for page-1 identity
+  identity_model: "gemini-3.6-flash"  # cheap model for page-1 identity
 ```
 
 To disable Tier C entirely without editing the yaml: set `enabled: false` or remove

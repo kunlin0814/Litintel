@@ -132,7 +132,7 @@ def process_inbox(
     notion_index: Dict[str, str],
     output_folder_id: str,
     engine_model: str,
-    identity_model: str = "gemini-3.5-flash",
+    identity_model: str = "gemini-3.6-flash",
 ) -> List[TierCRecord]:
     """Process every PDF in the Drive inbox.
 

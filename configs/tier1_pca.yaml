@@ -38,9 +38,9 @@ discovery:
 ai:
   provider: gemini
   # Two-Pass Architecture Config
-  pass1_model_fulltext: "gemini-3.5-flash"   # Pass 1 (Scoring) if Full Text
+  pass1_model_fulltext: "gemini-3.6-flash"   # Pass 1 (Scoring) if Full Text
   pass1_thinking_fulltext: "MEDIUM"                   # Thinking level for full-text scoring
-  pass1_model_abstract: "gemini-3.5-flash"   # Pass 1 (Scoring) if Abstract Only
+  pass1_model_abstract: "gemini-3.6-flash"   # Pass 1 (Scoring) if Abstract Only
   pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
   pass2_model: "gemini-3.1-pro-preview"            # Pass 2 (Methods extraction)
   pass2_thinking: "MEDIUM"                             # Thinking level for methods extraction
@@ -95,4 +95,4 @@ tier_c:
   max_size_mb: 18.0
   chunk_pages: 25
   max_chunks: 4
-  identity_model: "gemini-3.5-flash"
+  identity_model: "gemini-3.6-flash"

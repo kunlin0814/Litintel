@@ -43,7 +43,7 @@ def _first_page_pdf(pdf_bytes: bytes) -> bytes:
 
 def extract_identity_from_pdf(
     pdf_bytes: bytes,
-    model: str = "gemini-3.5-flash",
+    model: str = "gemini-3.6-flash",
     thinking: str = "LOW",
 ) -> Identity:
     """Run a single multimodal call on page 1 of the PDF to extract Identity.
@@ -155,7 +155,7 @@ def _is_real(value: Optional[str]) -> bool:
 
 def resolve_identity(
     pdf_bytes: bytes,
-    model: str = "gemini-3.5-flash",
+    model: str = "gemini-3.6-flash",
 ) -> Tuple[Identity, str]:
     """End-to-end identity resolution for a manual-inbox PDF.
 

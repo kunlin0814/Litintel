@@ -105,7 +105,7 @@ class TierCConfig(BaseModel):
     max_size_mb: float = 18.0
     chunk_pages: int = 25
     max_chunks: int = 4
-    identity_model: str = "gemini-3.5-flash"
+    identity_model: str = "gemini-3.6-flash"
 
 class AppConfig(BaseModel):
     pipeline_tier: PipelineTier

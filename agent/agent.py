@@ -48,7 +48,7 @@ litintel_retrieval = VertexAiRagRetrieval(
 
 root_agent = Agent(
     name='litintel_agent',
-    model='gemini-3.5-flash',
+    model='gemini-3.6-flash',
     description='Research assistant for prostate cancer and spatial omics literature',
     instruction=SYSTEM_INSTRUCTION,
     tools=[litintel_retrieval],
