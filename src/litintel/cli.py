@@ -41,6 +41,52 @@ def tier1(config: str = "configs/tier1_pca.yaml", limit: int = None):
 
 
 @app.command()
+def doctor(check: bool = typer.Option(
+    False, "--check", help="Also make one live API call per domain to prove each credential works"
+)):
+    """Show which account, project, and credential each subsystem will use.
+
+    LitIntel authenticates to Google under three independent identities that
+    share no credentials: Gemini (company project, ADC), the RAG corpus
+    (personal project, service-account key), and Drive (personal, user OAuth).
+    This prints how each one resolved from .env, so a misrouted project is
+    visible before a run rather than after it.
+    """
+    from litintel.credentials import describe_all, probe
+
+    exit_code = 0
+    for target in describe_all():
+        typer.secho("\n[%s] %s" % (target["domain"].upper(), target["mode"]), bold=True)
+        if target.get("project"):
+            typer.echo("  project    : %s" % target["project"])
+        if target.get("location"):
+            typer.echo("  location   : %s" % target["location"])
+        if target.get("corpus"):
+            typer.echo("  corpus     : %s" % target["corpus"])
+        typer.echo("  credential : %s" % (target.get("credential") or "-"))
+        if target.get("token"):
+            typer.echo("  oauth token: %s" % target["token"])
+
+        for note in target["notes"]:
+            typer.secho("  note       : %s" % note, fg=typer.colors.YELLOW)
+        if not target["ok"]:
+            exit_code = 1
+
+        if check:
+            result = probe(target["domain"])
+            colour = typer.colors.GREEN if result["ok"] else typer.colors.RED
+            typer.secho(
+                "  live check : %s -- %s" % ("OK" if result["ok"] else "FAILED", result["detail"]),
+                fg=colour,
+            )
+            if not result["ok"]:
+                exit_code = 1
+
+    typer.echo("")
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
 def validate(config: str):
     """Validate a configuration file"""
     try:

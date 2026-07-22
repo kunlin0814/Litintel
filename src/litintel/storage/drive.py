@@ -64,8 +64,10 @@ def get_drive_service(credentials_path: Optional[str] = None):
     # 2. Try User OAuth Flow (Client Secrets)
     client_secrets = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRETS_PATH")
     if not creds and client_secrets and os.path.exists(client_secrets):
-        token_path = 'token_drive.json'
-        
+        # Overridable so a second account can cache its token separately.
+        token_path = os.environ.get('GOOGLE_DRIVE_TOKEN_PATH', 'token_drive.json')
+
+
         # Load cached token
         if os.path.exists(token_path):
             creds = Credentials.from_authorized_user_file(token_path, SCOPES)

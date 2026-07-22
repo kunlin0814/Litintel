@@ -29,6 +29,8 @@ venv/bin/python -m pytest tests/test_schema_validation.py::test_ncbi_params_requ
 venv/bin/python -m pytest -q --run-integration
 
 # Pipeline / CLI
+venv/bin/litintel doctor            # which account/project/credential each subsystem uses
+venv/bin/litintel doctor --check    # ...plus one live API call per domain to prove it
 venv/bin/litintel tier1 --config configs/tier1_pca.yaml --limit 5
 venv/bin/litintel validate configs/tier1_pca.yaml
 venv/bin/litintel methodintel route "Leiden vs Louvain for spatial ATAC"
@@ -63,10 +65,17 @@ for Pass 2 and Tier C while both actually ran on `gemini-3.6-flash`. Do not rein
 `load_config_from_yaml()` logs every resolved model on each run; that log is the authoritative
 record of what executed.
 
-**The `.env` / YAML split:** `.env` holds only credentials and resource identifiers
-(`NCBI_*`, `NOTION_*`, `GOOGLE_*`, `GCP_PROJECT_ID`, `VERTEX_RAG_CORPUS_NAME`). Anything
-naming a model or tuning a behavior belongs in the YAML. `agent/cli.py` and `agent/agent.py`
-both read the `rag_agent` block rather than env.
+**The `.env` / YAML split is by question, not by topic:**
+
+| File | Answers | Holds |
+|---|---|---|
+| `.env` | WHERE / AS WHOM | accounts, projects, credential paths, resource IDs |
+| `configs/*.yaml` | HOW | models, thinking levels, thresholds, `top_k` |
+
+`.env.example` is the canonical template and documents the three Google identity blocks.
+`src/litintel/credentials.py` is the single place all three are resolved, and
+`litintel doctor` prints the result -- use it before blaming code for a credential problem.
+`agent/cli.py` and `agent/agent.py` read the `rag_agent` YAML block rather than env.
 
 The pipeline is **Gemini-only** in practice (`ai.provider: gemini`); the OpenAI key was revoked
 2026-07-22. `enrich/ai_client.py` still carries an unexercised `AIProvider.OPENAI` branch --
