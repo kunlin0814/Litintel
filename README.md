@@ -28,11 +28,14 @@ It continuously monitors PubMed, uses AI to understand and score each paper, and
 ### 1. Install
 
 ```bash
-git clone https://github.com/kunlin0814/internal_research_ops.git
-cd internal_research_ops
+git clone https://github.com/kunlin0814/Litintel.git
+cd Litintel
 python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
+
+`pyproject.toml` is the single source of dependency truth -- `-e` also installs the
+`litintel` console script and removes any need for `PYTHONPATH=src`.
 
 ### 2. Configure `.env`
 

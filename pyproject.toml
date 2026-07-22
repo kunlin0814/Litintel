@@ -13,14 +13,13 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "google-generativeai",
-    "google-genai",
-    "openai",
+    "google-generativeai==0.8.5",
+    "google-genai>=1.0.0",
+    "openai==2.11.0",
     "notion-client",
     "google-api-python-client",
     "google-auth-httplib2",
     "google-auth-oauthlib",
-    "biopython",
     "pandas",
     "pyyaml",
     "typer",
@@ -29,9 +28,16 @@ dependencies = [
     "google-cloud-aiplatform>=1.49.0",
     "google-adk>=0.3.0",
     "pypdf>=4.0",
-    "Pillow>=10.0"
+    "Pillow>=10.0",
+    "requests==2.32.4",
+    # >=1 required by google-adk; the old requirements.txt pin (0.21.0) was
+    # incompatible with it, so the two install paths silently contradicted.
+    "python-dotenv>=1,<2"
 ]
 requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = ["pytest==7.4.0"]
 
 [project.scripts]
 litintel = "litintel.cli:app"

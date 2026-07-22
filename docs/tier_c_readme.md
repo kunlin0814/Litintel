@@ -174,7 +174,7 @@ subfolders on first run -- you do not need to create those manually.
 pip install "pypdf>=4.0" "Pillow>=10.0"
 ```
 
-Both are already declared in `requirements_litintel.txt` and `pyproject.toml`.
+Both are already declared in `pyproject.toml`, so `pip install -e .` covers them.
 
 ### 4. Smoke-test the CLI before the next biweekly run
 

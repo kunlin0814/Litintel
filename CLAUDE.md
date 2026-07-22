@@ -4,43 +4,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Environment and commands
 
-The package in `src/litintel/` is **not pip-installed**, and the repo-root `venv/` is an empty
-shell -- it was recreated with `python -m venv --clear` at the current path and never
-repopulated, so it holds only `pip`.
-
-Two interpreters, and the split matters:
-
-- **conda base** (`/Users/kun-linho/miniforge3/bin/python`) runs the **test suite** but
-  **cannot run the pipeline** -- it is missing `dotenv`, `notion_client`, `openai`,
-  `googleapiclient`, and `pypdf`. `import litintel.cli` fails there on `dotenv`.
-- **a populated venv** is required for any actual pipeline/CLI run:
-  `venv/bin/pip install -r requirements.txt -r requirements_litintel.txt && venv/bin/pip install -e .`
-  (the `-e .` also removes the need for `PYTHONPATH=src`).
+`pyproject.toml` is the **single source of dependency truth** (the old `requirements.txt` /
+`requirements_litintel.txt` are gone -- they were mutually incomplete and pinned
+`python-dotenv==0.21.0`, which `google-adk` rejects). Set up with:
 
 ```bash
-# Tests (46 pass, 3 integration skipped) -- this is the verified invocation
-PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest -q
+python -m venv venv && venv/bin/pip install -e ".[dev]"
+```
+
+The editable install provides the `litintel` console script and makes `PYTHONPATH=src`
+unnecessary. Note that **conda base cannot run the pipeline** -- it lacks `dotenv`,
+`notion_client`, `openai`, `googleapiclient`, and `pypdf`, so `import litintel.cli` fails
+there. It can still run the test suite via `PYTHONPATH=src`.
+
+```bash
+# Tests (46 pass, 3 integration skipped)
+venv/bin/python -m pytest -q
 
 # Single test file / single test
-PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest tests/test_methodintel_router.py -v
-PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest tests/test_schema_validation.py::test_name -v
+venv/bin/python -m pytest tests/test_methodintel_router.py -v
+venv/bin/python -m pytest tests/test_schema_validation.py::test_ncbi_params_requires_email -v
 
 # Integration tests hit real APIs and are skipped unless explicitly enabled (see tests/conftest.py)
-PYTHONPATH=src /Users/kun-linho/miniforge3/bin/python -m pytest -q --run-integration
+venv/bin/python -m pytest -q --run-integration
 
 # Pipeline / CLI
-PYTHONPATH=src python -m litintel.cli tier1 --config configs/tier1_pca.yaml --limit 5
-PYTHONPATH=src python -m litintel.cli validate configs/tier1_pca.yaml
-PYTHONPATH=src python -m litintel.cli methodintel route "Leiden vs Louvain for spatial ATAC"
-PYTHONPATH=src python -m litintel.cli tier-c inbox --dry-run
-PYTHONPATH=src python -m litintel.cli tier-c pmid 12345678
+venv/bin/litintel tier1 --config configs/tier1_pca.yaml --limit 5
+venv/bin/litintel validate configs/tier1_pca.yaml
+venv/bin/litintel methodintel route "Leiden vs Louvain for spatial ATAC"
+venv/bin/litintel tier-c inbox --dry-run
+venv/bin/litintel tier-c pmid 12345678
 
 # RAG query agent (separate entrypoint, needs gcloud ADC + GOOGLE_API_KEY)
-python agent/cli.py "What spatial ATAC papers cover CTCF in prostate cancer?"
+venv/bin/python agent/cli.py "What spatial ATAC papers cover CTCF in prostate cancer?"
 ```
 
 `pytest` config lives in `pyproject.toml` (`testpaths=["tests"]`, `norecursedirs` excludes
 `legacy/`). Pre-commit runs `detect-secrets` against `.secrets.baseline`.
+
+**Each worktree needs its own `venv/`** (it is gitignored). An editable install binds to the
+source tree it was run from, so a venv built in one worktree will execute *that* worktree's
+code no matter which directory you invoke it from.
 
 ## Architecture
 
