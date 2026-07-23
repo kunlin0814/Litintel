@@ -67,12 +67,36 @@ def _get_openai_client():
         _OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     return _OPENAI_CLIENT
 
+def _gemini_credentials():
+    """Return explicit credentials for Gemini, or None to use the ambient ADC.
+
+    GEMINI_CREDENTIALS_JSON is only needed when GCP_PROJECT_ID names a project
+    the ambient ADC cannot reach -- e.g. running Gemini on a personal project
+    while `gcloud auth application-default login` is a company account. Leave
+    it unset to use ADC, which is the normal case.
+    """
+    key_path = os.environ.get('GEMINI_CREDENTIALS_JSON')
+    if not key_path:
+        return None
+    if not os.path.exists(key_path):
+        raise FileNotFoundError(
+            'GEMINI_CREDENTIALS_JSON points at a missing file: %s' % key_path
+        )
+    from google.oauth2 import service_account
+
+    return service_account.Credentials.from_service_account_file(
+        key_path, scopes=['https://www.googleapis.com/auth/cloud-platform']
+    )
+
+
 def _get_gemini_client():
     """Return a cached google-genai Client.
 
     Default: Vertex AI mode (enterprise license, data not used for training).
       Requires: GCP_PROJECT_ID env var, ADC credentials (gcloud auth).
       Optional: GCP_LOCATION env var (default: us-central1).
+      Optional: GEMINI_CREDENTIALS_JSON to authenticate with a service-account
+                key instead of the ambient ADC (cross-account setups).
 
     Fallback: API key mode (set USE_VERTEX_AI=false).
       Requires: GOOGLE_API_KEY env var.
@@ -87,12 +111,18 @@ def _get_gemini_client():
                     'Set USE_VERTEX_AI=false to use API key instead.'
                 )
             location = os.environ.get('GCP_LOCATION', 'us-central1')
+            credentials = _gemini_credentials()
             _GEMINI_CLIENT = genai.Client(
                 vertexai=True,
                 project=project,
                 location=location,
+                credentials=credentials,
             )
-            logger.info('Gemini client initialized via Vertex AI (project=%s, location=%s)', project, location)
+            logger.info(
+                'Gemini client initialized via Vertex AI (project=%s, location=%s, credential=%s)',
+                project, location,
+                'GEMINI_CREDENTIALS_JSON' if credentials else 'ambient ADC',
+            )
         else:
             api_key = os.environ.get('GOOGLE_API_KEY')
             if not api_key:

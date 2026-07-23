@@ -64,13 +64,22 @@ def gemini_target() -> Dict[str, Any]:
     notes: List[str] = []
     if not project:
         notes.append("GCP_PROJECT_ID is unset -- required for Vertex AI mode")
+
+    key_path = os.environ.get("GEMINI_CREDENTIALS_JSON")
+    if key_path:
+        credential = "GEMINI_CREDENTIALS_JSON (%s)" % key_path
+        if not os.path.exists(key_path):
+            notes.append("GEMINI_CREDENTIALS_JSON points at a missing file: %s" % key_path)
+    else:
+        credential = "ambient ADC (gcloud auth application-default login)"
+
     return {
         "domain": DOMAIN_GEMINI,
         "mode": "vertex_ai",
         "project": project,
         "location": os.environ.get("GCP_LOCATION", "us-central1"),
-        "credential": "ambient ADC (gcloud auth application-default login)",
-        "ok": bool(project),
+        "credential": credential,
+        "ok": bool(project) and not any("missing file" in n for n in notes),
         "notes": notes,
     }
 

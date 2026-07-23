@@ -24,6 +24,7 @@ def clean_env(monkeypatch):
     """Strip every identity var so each test states its own world."""
     for var in (
         'USE_VERTEX_AI', 'GCP_PROJECT_ID', 'GCP_LOCATION', 'GOOGLE_API_KEY',
+        'GEMINI_CREDENTIALS_JSON',
         'VERTEX_RAG_CORPUS_NAME', 'RAG_CREDENTIALS_JSON',
         'GOOGLE_DRIVE_CLIENT_SECRET', 'GOOGLE_CLIENT_SECRETS_PATH',
         'GOOGLE_DRIVE_TOKEN_PATH',
@@ -63,6 +64,33 @@ class TestGeminiTarget:
 
     def test_flags_a_missing_project(self, clean_env):
         assert gemini_target()['ok'] is False
+
+    def test_defaults_to_ambient_adc(self, clean_env):
+        clean_env.setenv('GCP_PROJECT_ID', 'prj-kun-cpdr-prod-nsmc')
+        assert 'ambient ADC' in gemini_target()['credential']
+
+    def test_explicit_key_overrides_adc(self, clean_env):
+        """Running Gemini on a project the company ADC cannot reach."""
+        clean_env.setenv('GCP_PROJECT_ID', 'kun-gcp-proj')
+        clean_env.setenv('GEMINI_CREDENTIALS_JSON', __file__)
+        target = gemini_target()
+        assert 'GEMINI_CREDENTIALS_JSON' in target['credential']
+        assert target['ok'] is True
+
+    def test_fails_on_a_missing_key_file(self, clean_env):
+        clean_env.setenv('GCP_PROJECT_ID', 'kun-gcp-proj')
+        clean_env.setenv('GEMINI_CREDENTIALS_JSON', '/nonexistent/key.json')
+        assert gemini_target()['ok'] is False
+
+    def test_all_personal_uses_one_key_for_both_domains(self, clean_env):
+        """The fully-personal setup: same key file, two independent domains."""
+        clean_env.setenv('GCP_PROJECT_ID', 'kun-gcp-proj')
+        clean_env.setenv('GEMINI_CREDENTIALS_JSON', __file__)
+        clean_env.setenv('VERTEX_RAG_CORPUS_NAME', _PERSONAL_CORPUS)
+        clean_env.setenv('RAG_CREDENTIALS_JSON', __file__)
+        assert gemini_target()['project'] == 'kun-gcp-proj'
+        assert rag_target()['project'] == 'kun-gcp-proj'
+        assert gemini_target()['ok'] and rag_target()['ok']
 
     def test_api_key_mode(self, clean_env):
         clean_env.setenv('USE_VERTEX_AI', 'false')
