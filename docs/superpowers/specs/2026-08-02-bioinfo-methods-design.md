@@ -42,7 +42,7 @@ tuning problem.
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | The taxonomy is **seeded from the field's own maps** -- reviews, tool docs, benchmarks -- not from keyword search and not from the analyst's memory | Both alternatives fail on unknown unknowns. A keyword sweep cannot return a method you cannot name; enumerating "top-down from the stage list" only moves the same blind spot from PubMed into the analyst's head. Reviews and tutorial indices are enumerations *already written by people who know the whole field*. See section 3.4. |
-| D1a | Keyword retrieval is retained, scoped to **evidence for an already-named `(stage, method)` pair** | "scRNA clustering" is noise; "Leiden connectivity guarantee, benchmark" is precise. `source_plan.py` keeps its job, but stops deciding what exists. |
+| D1a | Keyword retrieval is retained, scoped to **evidence for an already-named `(concept, method)` pair** | "scRNA clustering" is noise; "Leiden connectivity guarantee, benchmark" is precise. `source_plan.py` keeps its job, but stops deciding what exists. |
 | D2 | Knowledge lives in **`dotfiles`**, code stays in **`Litintel`** | Clean split: knowledge is universal and must outlive the pipeline; code is PCa-scoped. `dotfiles` is already a separate repo, so this satisfies the repo-separation goal without a new repo. |
 | D3 | **Git is the source of truth. Notion is a view.** | The requirement is a traceable history of what changed and why. `git log -p` is exactly that, for free, diffable and offline. Notion page history is time-limited, not diffable, and not agent-queryable. `storage/notion.py` also truncates every text property to 2000 chars, which method chapters will exceed immediately. |
 | D4 | **Two layers**: curated evidence (append-only) -> synthesized chapters (derived) | Derived-and-committed chapters make the change log automatic and guarantee the synthesis cannot drift from its evidence. |
@@ -50,6 +50,7 @@ tuning problem.
 | D6 | Lifecycle status stays **user-confirmed, not LLM-inferred** | Carried forward unchanged from `docs/methodintel_plan.md:246`. Prevents training-era defaults from masquerading as authoritative. |
 | D7 | The Tier 1 PCa pipeline is **demoted, not retired** | It keeps its own Notion record (still useful as a field-awareness feed) and additionally emits usage evidence. Nothing is deleted; it stops being the *source* of method knowledge and becomes *evidence* of adoption. |
 | D8 | **Both layers are Markdown with YAML frontmatter.** HTML is a generated view only, never a storage format | One format for structured fields (frontmatter, as machine-strict as bare YAML) and prose (body). Already the house pattern -- agent-memory files and `SKILL.md` use exactly this shape, so bare YAML would be a third convention for no gain. Bare YAML has no rendering story at all. HTML is excluded as storage because HTML diffs are unreadable, which would break D5 outright; agents also read tag soup worse than Markdown. Rendering MD to HTML later is free; the reverse is not. |
+| D9 | **The primary node is a concept, defined by its question; terms are time-stamped labels on it** | Terms are unstable across time -- the first paper doing a thing does not use the name the thing later acquires, so a term-keyed index can only find terms that already exist. A concept may legitimately have *no* label yet, a state a term-keyed design cannot represent. Chapters key on concepts, so a field-wide rename is a label append rather than a migration. See 3.4.2. |
 
 ---
 
@@ -92,14 +93,12 @@ Consequences to rely on:
   driven by the `.dotfiles-skills` manifest, so an unrelated skill is never
   deleted.
 
-**Pending one-line change to `setup.sh` (owner: Kun-Lin, not part of this
-spec).** Codex now supports symlinked skill files, so the `cp -f` at `:165` is a
-leftover from when it did not. Changing it to `ln -sf` also makes the `rm -rf`
-staleness clearing at `:149-153` dead -- that block exists only to stop stale
-*copies* accumulating. With all three harnesses symlinked, editing an existing
-chapter is live everywhere and `setup.sh` is needed only when files are added.
-Worth doing before the first large skill lands, since a knowledge base is edited
-far more often than it is extended.
+**Codex stays on copies -- owner decision, 2026-08-02.** Codex now supports
+symlinked skill files, so the `cp -f` at `:165` is a leftover, but the same
+pattern appears at `:317-318` (hooks) and `:478-479` (dispatch bin); changing
+one without the others is inconsistent, and the hook paths carry more risk than
+the benefit justifies. **Consequence to accept:** editing an existing chapter is
+live for Claude and Gemini, but Codex needs a `setup.sh` run to see it.
 
 The pattern is already proven in the same repo:
 `skills/bioinfo-code/references/ArchR/` holds `01_setup-and-installation.md`
@@ -199,27 +198,94 @@ This converts an open-ended worry into a scheduled, mechanical check with a
 concrete output. It is the only part of this design that addresses unknown
 unknowns, so it is not optional.
 
-#### 3.4.2 The lexicon: terms are harvested before they are understood
+#### 3.4.2 Concepts are primary; terms are time-stamped labels on them
 
-The immediate product of reading a map is **vocabulary, not knowledge**, and
-this distinction is what makes the whole approach work.
+The immediate product of reading a map is **vocabulary, not knowledge**: a term
+is useful *before* it is understood, because the term is the query handle.
+Understanding is deferred to the moment the term is actually needed.
 
-A term is useful *before* it is understood, because the term is the query
-handle. Someone who has never heard of neighborhood analysis cannot ask about
-it -- but they do not need to understand it to record that the phrase exists and
-sits near "spatial niche." Understanding is deferred to the moment the term is
-actually needed. The blind spot is not ignorance of the concept; it is not
-possessing the word.
+But keying the system on terms fails, for a reason that is easy to miss. **The
+first paper to do a thing does not use the name the thing later acquires.** The
+earliest work on what is now called neighborhood analysis said something closer
+to "we tested whether cell types co-occur more than expected by chance." No
+alias table would have matched that, and none will match the next unnamed
+method either. A term-keyed index can only ever find terms that already exist.
 
-`LEXICON.md` holds every term the system has ever seen:
+**What is stable is the question the method answers.** So the primary node is a
+*concept*, defined by its question, and terms hang off it as time-stamped labels:
+
+```yaml
+concept: spatial-cooccurrence-beyond-chance
+question: >
+  Do cell types co-occur in space more or less than expected by chance?
+labels:
+  - {text: "neighborhood analysis", since: 2021, status: dominant}
+  - {text: "cellular neighborhoods", since: 2020}
+  - {text: "niche identification"}
+  - {text: "spatial co-occurrence", status: superseded}
+methods: ["Moran's I", "Ripley's K", "neighborhood enrichment"]
+```
+
+Consequences that matter:
+
+- **A concept may have no canonical label at all.** That is the legitimate state
+  of a method the field has not yet named, and a term-keyed design cannot even
+  represent it. Record the question; the label arrives later.
+- **A chapter is keyed by concept**, not by whatever the stage happens to be
+  called this year. Renaming is then a label append, not a migration.
+- `LEXICON.md` is demoted from *the* index to **a label index pointing at
+  concepts** -- still worth having as a fast path, no longer the mechanism.
+
+##### Two-tier resolution (why the agent is load-bearing here)
+
+| Tier | Mechanism | Cost | Covers |
+|---|---|---|---|
+| 1 | Alias hit -- dict lookup in `router.py` | free | anything already named |
+| 2 | Miss -> semantic match of the query against **concept questions** | one retrieval | phrasings never seen before |
+
+Tier 2 is the real justification for the Vertex RAG corpus in this design, and a
+better one than "chapters synced for search": the corpus is matched against
+*questions*, not prose.
+
+The loop then runs itself: ask in your own words -> agent matches the concept ->
+returns the field's current name -> the label is appended to the concept. The
+lexicon grows as a side effect of a question being asked, which no one planned.
+
+A **miss is informative, not a failure**: either a real gap in coverage (go read
+a map, 3.4.1) or a genuinely unnamed concept (record the question, label
+pending).
+
+##### The hard part, stated plainly
+
+**Concept granularity has no principled answer.** Is "do these cells form
+groups?" one concept or three -- clustering, community detection, cell-type
+annotation? Too coarse is useless; too fine reinvents the term problem one level
+up.
+
+Working rule, offered as a heuristic and not a derivation: **define a concept by
+the question asked at the moment of choosing a method, and merge two questions
+into one concept when they share a candidate method set.** This is serviceable
+because the system exists to support method decisions, so that is the granularity
+its consumers operate at. Expect to adjust it on contact with real chapters.
+
+**Gap found:** concepts split and merge over time -- "clustering" shed cell-type
+annotation as a separate concern. `MethodGraphEdge.ALLOWED_EDGE_TYPES`
+(`schema.py:154+`) carries `replaces_or_modernizes` and `competes_with` but has
+no `split_into` / `merged_from`. Both must be added, or concept history cannot
+be represented at all.
+
+##### Lexicon record
+
+`LEXICON.md` holds every term the system has ever seen, each pointing at a
+concept:
 
 | Field | Meaning |
 |---|---|
-| `canonical` | preferred name |
-| `aliases` | every other surface form observed, verbatim |
-| `stage` | owning stage, **nullable** -- an unplaced term is still worth holding |
+| `term` | the surface form, verbatim |
+| `concept` | concept id this labels, **nullable** -- an unplaced term is still worth holding |
 | `status` | `seen` \| `mapped` \| `retired` |
 | `first_seen` | reference record id where it was harvested |
+| `note` | free text, e.g. why it was retired |
 
 Status semantics:
 
@@ -232,9 +298,14 @@ Status semantics:
 **The loop this creates:**
 
 ```
-map read -> term recorded (seen) -> a later question surfaces it
-         -> chapter written (mapped) -> term becomes a query handle
+map read -> term recorded (seen), concept may be null
+         -> a question (in any phrasing) matches the concept via tier 2
+         -> term bound to concept, chapter written (mapped)
+         -> term becomes a tier-1 fast path
          -> drives future update / retirement of that method
+
+and, independently:
+question with no matching concept -> new concept recorded, label pending
 ```
 
 Two rules keep it from degenerating:
@@ -256,12 +327,13 @@ Two rules keep it from degenerating:
 word boundaries. `LEXICON.md` is the human-editable source those dicts are
 generated from.
 
-**Gap found:** there is no `STAGE_ALIASES`. Stage-level terms -- "neighborhood
-analysis", "niche identification", "spatial domain detection", "cellular
-neighborhoods" -- are neither methods nor implementations, so a question phrased
-as "spatial region niche analysis" currently has nothing to match against. This
-dict must be added; it is the one that makes the lexicon reachable from a
-question asked in the user's own words rather than the field's.
+**Gap found:** there is no concept-level dict. "Neighborhood analysis", "niche
+identification", "spatial domain detection", "cellular neighborhoods" are
+neither methods nor implementations, so a question phrased as "spatial region
+niche analysis" currently has nothing to match against. A `CONCEPT_ALIASES`
+mapping label -> concept id must be added. It is the tier-1 fast path; without
+it every stage-level question falls through to tier-2 retrieval, which works but
+costs a call per query.
 
 #### 3.4.3 Role of the PCa pipeline, restated
 
@@ -387,7 +459,9 @@ because it needs a standing exception to A3.
 
 ## 5. Layer 2: chapters
 
-One Markdown chapter per pipeline stage -- the "encyclopedia chapter" unit.
+One Markdown chapter per **concept** (3.4.2) -- the "encyclopedia chapter" unit.
+Keying on the concept rather than on the stage's current name means a field-wide
+rename is a label append, not a file migration.
 Generated from the stage's `references/` shard, committed to git, never edited
 by hand.
 
@@ -473,7 +547,8 @@ either.
 
 | Component | Location | Role here |
 |---|---|---|
-| `METHOD_ALIASES` / `IMPLEMENTATION_ALIASES` | `router.py:15`, `:29` | Generated from `LEXICON.md`. **`STAGE_ALIASES` must be added** (3.4.2). |
+| `METHOD_ALIASES` / `IMPLEMENTATION_ALIASES` | `router.py:15`, `:29` | Generated from `LEXICON.md`. **`CONCEPT_ALIASES` must be added** (3.4.2). |
+| `MethodGraphEdge.ALLOWED_EDGE_TYPES` | `schema.py:154+` | **`split_into` / `merged_from` must be added** -- concept history is unrepresentable without them. |
 | `_extract_aliases_in_query_order()` | `router.py:132` | Alias -> canonical lookup. Works as-is once the stage dict exists. |
 | `RouterMode` (5 modes) | `schema.py:8-16` | Classifies the question. `STALENESS_CHECK` is the "what changed" path. |
 | `ArtifactType` | `schema.py:18-26` | `LIFECYCLE_REPORT` and `STAGE_MAP` map onto chapters. |
@@ -531,14 +606,17 @@ Explicitly deferred until a real chapter proves the need:
       and the chapter renders them as a numbered bibliography (5.1).
 - [ ] Tier 1 emits at least one `usage` record into `references/` on a real run.
 - [ ] A status change is demonstrable as a `git diff` on the chapter.
-- [ ] The stage list in `INDEX.md` was seeded from a named review's section
+- [ ] The concept list in `INDEX.md` was seeded from a named review's section
       headings (D1 / 3.4), and that review is recorded as a reference record so
       the next coverage audit has a baseline to diff against.
-- [ ] `LEXICON.md` exists and holds at least one `seen` term that has **no**
-      chapter -- proving the design can hold a term it does not yet understand.
+- [ ] `LEXICON.md` exists and holds at least one `seen` term with a **null**
+      concept -- proving the design can hold a term it does not yet understand.
+- [ ] At least one concept carries **two or more labels**, demonstrating that a
+      rename is an append rather than a migration.
 - [ ] A question phrased in the user's own words, not the field's, reaches the
-      right chapter through an alias (the "spatial region niche analysis" ->
-      "neighborhood analysis" path). Requires `STAGE_ALIASES` in `router.py`.
+      right chapter (the "spatial region niche analysis" -> "neighborhood
+      analysis" path) -- via `CONCEPT_ALIASES` on tier 1, or semantic match on
+      concept questions on tier 2.
 
 ---
 
