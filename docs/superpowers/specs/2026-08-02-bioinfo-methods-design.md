@@ -48,6 +48,7 @@ tuning problem.
 | D5 | Layer 2 is **regenerated, never hand-edited** | A `git diff` of a chapter between two dates *is* the "what changed and why" answer, with the commit pointing at the evidence that caused it. Hand-editing breaks that invariant. |
 | D6 | Lifecycle status stays **user-confirmed, not LLM-inferred** | Carried forward unchanged from `docs/methodintel_plan.md:246`. Prevents training-era defaults from masquerading as authoritative. |
 | D7 | The Tier 1 PCa pipeline is **demoted, not retired** | It keeps its own Notion record (still useful as a field-awareness feed) and additionally emits usage evidence. Nothing is deleted; it stops being the *source* of method knowledge and becomes *evidence* of adoption. |
+| D8 | **Both layers are Markdown with YAML frontmatter.** HTML is a generated view only, never a storage format | One format for structured fields (frontmatter, as machine-strict as bare YAML) and prose (body). Already the house pattern -- agent-memory files and `SKILL.md` use exactly this shape, so bare YAML would be a third convention for no gain. Bare YAML has no rendering story at all. HTML is excluded as storage because HTML diffs are unreadable, which would break D5 outright; agents also read tag soup worse than Markdown. Rendering MD to HTML later is free; the reverse is not. |
 
 ---
 
@@ -76,20 +77,28 @@ the operational definition of "compounding."
 `dotfiles/skills/` and deploys it to all three harnesses:
 
 ```
-setup.sh:167   ln -sf "${src_file}" "${claude_dest}"    # Claude -> symlink
-setup.sh:168   cp -f  "${src_file}" "${codex_dest}"     # Codex  -> copy
-setup.sh:170   ln -sf "${src_file}" "${gemini_dest}"    # Gemini -> symlink
+setup.sh:164   ln -sf "${src_file}" "${claude_dest}"    # Claude -> symlink
+setup.sh:165   cp -f  "${src_file}" "${codex_dest}"     # Codex  -> copy (see below)
+setup.sh:167   ln -sf "${src_file}" "${gemini_dest}"    # Gemini -> symlink
 ```
 
 Consequences to rely on:
 
 - Claude and Gemini get **file-level symlinks**, so editing an existing chapter
   is live in the next session with no `setup.sh` run.
-- **Adding a new file** requires `setup.sh` (to mint the symlink). Codex needs
-  it either way, since Codex gets copies.
+- **Adding a new file** requires `setup.sh`, to mint the symlink.
 - `setup.sh:112` refuses to prune when the source dir is empty, and pruning is
   driven by the `.dotfiles-skills` manifest, so an unrelated skill is never
   deleted.
+
+**Pending one-line change to `setup.sh` (owner: Kun-Lin, not part of this
+spec).** Codex now supports symlinked skill files, so the `cp -f` at `:165` is a
+leftover from when it did not. Changing it to `ln -sf` also makes the `rm -rf`
+staleness clearing at `:149-153` dead -- that block exists only to stop stale
+*copies* accumulating. With all three harnesses symlinked, editing an existing
+chapter is live everywhere and `setup.sh` is needed only when files are added.
+Worth doing before the first large skill lands, since a knowledge base is edited
+far more often than it is extended.
 
 The pattern is already proven in the same repo:
 `skills/bioinfo-code/references/ArchR/` holds `01_setup-and-installation.md`
@@ -106,8 +115,8 @@ skills/bioinfo-methods/
   INDEX.md                       # chapter list + status-at-a-glance table. Small.
   references/                    # LAYER 1 -- curated evidence, append-only
     clustering/
-      2026-08-02-traag2019-louvain-connectivity.yaml
-      2026-08-02-pmid41234567-usage.yaml
+      2026-08-02-traag2019-louvain-connectivity.md
+      2026-08-02-pmid41234567-usage.md
     neighborhood_analysis/
     normalization/
   chapters/                      # LAYER 2 -- derived, regenerated, committed
@@ -141,31 +150,42 @@ deploys to three harnesses. Therefore:
 
 ## 4. Layer 1: reference records
 
-One YAML file per record. **Append-only: never edited, never deleted.** A
-superseded claim is contradicted by a newer record, not overwritten -- that is
-what makes the history real rather than asserted.
+One Markdown file per record, structured fields in YAML frontmatter (D8).
+**Append-only: never edited, never deleted.** A superseded claim is contradicted
+by a newer record, not overwritten -- that is what makes the history real rather
+than asserted.
 
-```yaml
-# references/clustering/2026-08-02-traag2019-louvain-connectivity.yaml
+```markdown
+<!-- references/clustering/2026-08-02-traag2019-louvain-connectivity.md -->
+---
 id: 2026-08-02-traag2019-louvain-connectivity
 stage: clustering
 methods: ["Louvain", "Leiden"]
 kind: benchmark          # benchmark | usage | deprecation | best_practice | personal
 recorded: 2026-08-02
-statement: >
-  Louvain can yield arbitrarily badly connected, and in some cases
-  disconnected, communities. Leiden guarantees well-connected communities.
 source_ref:
   kind: doi              # pmid | doi | url | docs_url | github_url | personal_obs
   value: "10.1038/s41598-019-41695-z"
   note: "Traag, Waltman, van Eck 2019"
 confidence: high         # high | medium | low
+---
+
+Louvain can yield arbitrarily badly connected, and in some cases disconnected,
+communities. Leiden guarantees well-connected communities.
+
+Bears on the ArchR Louvain -> Leiden decision at Apollo Stage 5.
 ```
+
+The claim itself lives in the **body**, as prose, not as a quoted YAML scalar.
+That is the readability win: the record renders in VSCode preview and on GitHub,
+and the part a human actually reads is plain text. Frontmatter carries only what
+a machine needs to index on.
 
 The `source_ref` block is deliberately **field-identical to
 `methodintel/schema.py::SourceRef` (`:91`)**, and `kind` reuses
 `SourceRefKind` (`:80`) verbatim, including `personal_obs`. A record maps to
-one `EvidenceClaim` (`schema.py:99`) with no translation layer.
+one `EvidenceClaim` (`schema.py:99`) -- frontmatter to fields, body to
+`statement` -- with no translation layer.
 
 ### 4.1 Three feeds
 
@@ -187,6 +207,31 @@ commits** them. The human reviews and commits in `dotfiles`.
 
 This is not a limitation to work around. It is the review gate D6 requires,
 enforced by the repo boundary instead of by convention.
+
+**Worktree isolation applies, and it splits by write mechanism.** Both repos are
+opted in -- `worktree-isolation` marker present in each `.git` -- so
+`institution/hooks/trunk_write_guard.sh` is live. Confirmed behavior:
+
+| Write path | Policed? | Rule |
+|---|---|---|
+| Agent `Edit`/`Write` tool into the `dotfiles` **trunk** | yes -- **blocked**, exit 2 | Must go through `dotfiles-claude`, land by `merge --ff-only`. |
+| Agent `Edit`/`Write` into `dotfiles-claude` | passes | Normal agent home. |
+| Pipeline write from Python/Bash | **no** | The hook is a Claude `PreToolUse(Edit\|Write)` guard; its header (`:12-13`) states Bash writes are deliberately out of scope, with the git pre-commit hook as the backstop. |
+
+So a Litintel run would *not* be blocked writing into the trunk, but agent-driven
+chapter generation would be. To keep one rule instead of two:
+
+```yaml
+methods_repo_path: "~/GitHub/dotfiles-claude/skills/bioinfo-methods"
+```
+
+**Assumption stated:** point at the agent worktree home, not the trunk, and land
+everything by `git -C ~/GitHub/dotfiles merge --ff-only claude`. This obeys the
+isolation rule with no exception carved for the pipeline, and the resulting lag
+before `setup.sh` redeploys *is* the D6 review gate rather than a cost. The
+alternative -- pipeline writes straight into the trunk, since append-only records
+carry unique date+id filenames and essentially never conflict -- is rejected only
+because it needs a standing exception to A3.
 
 ---
 
@@ -285,6 +330,9 @@ Explicitly deferred until a real chapter proves the need:
 - Splitting `references/` out of the skill directory. Revisit only if the
   symlink count becomes a real problem.
 - Changing `configs/tier1_pca.yaml` discovery. The PCa corpus stays as-is (D7).
+- A generated browsable `INDEX.html` over the chapters. This is the right home
+  for HTML when it is wanted (D8), and it is purely additive -- a renderer over
+  committed Markdown, addable at any time without touching storage.
 
 ---
 
@@ -292,7 +340,7 @@ Explicitly deferred until a real chapter proves the need:
 
 - [ ] `skills/bioinfo-methods/` exists in `dotfiles` with `SKILL.md` + `INDEX.md`.
 - [ ] `setup.sh` deploys it to all three harnesses (verified by observing the
-      symlink and the Codex copy, not assumed).
+      deployed file in each of the three harness trees, not assumed).
 - [ ] One stage fully populated end to end -- clustering, reusing the existing
       Stage 5 MVP question from `docs/methodintel_plan.md:76`.
 - [ ] That chapter is generated from its `references/` shard, not hand-written,
@@ -316,6 +364,11 @@ Explicitly deferred until a real chapter proves the need:
    necessarily transfer.
 3. **Notion methods DB schema.** Deferred (section 7), so its property mapping
    is undefined. Not blocking.
-4. Item 4.2 assumes Litintel can write outside its own repo without tripping the
-   `trunk_write_guard.sh` hook in `dotfiles/institution/hooks/`.
-   `# VERIFY: check the hook's scope before the first cross-repo write.`
+4. ~~Whether `trunk_write_guard.sh` blocks the cross-repo write.~~ **Resolved**
+   -- see the table in 4.2. Both repos are opted in; the hook policies agent
+   `Edit`/`Write` tool calls only, not Bash/Python writes. Design now routes
+   through `dotfiles-claude` so one rule covers both paths.
+5. `setup.sh` uses `cp -f` for Codex in three places beyond skills -- hooks
+   (`:317-318`) and dispatch bin (`:478-479`). If Codex symlink support is
+   confirmed, those are candidates for the same one-line change, but they are
+   outside this spec's scope.
