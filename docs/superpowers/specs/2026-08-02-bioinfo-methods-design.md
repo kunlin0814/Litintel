@@ -114,6 +114,7 @@ lacks.
 skills/bioinfo-methods/
   SKILL.md                       # trigger + how to query. Small.
   INDEX.md                       # chapter list + status-at-a-glance table. Small.
+  LEXICON.md                     # every term ever seen, with aliases (3.4.2)
   references/                    # LAYER 1 -- curated evidence, append-only
     clustering/
       2026-08-02-traag2019-louvain-connectivity.md
@@ -198,7 +199,71 @@ This converts an open-ended worry into a scheduled, mechanical check with a
 concrete output. It is the only part of this design that addresses unknown
 unknowns, so it is not optional.
 
-#### 3.4.2 Role of the PCa pipeline, restated
+#### 3.4.2 The lexicon: terms are harvested before they are understood
+
+The immediate product of reading a map is **vocabulary, not knowledge**, and
+this distinction is what makes the whole approach work.
+
+A term is useful *before* it is understood, because the term is the query
+handle. Someone who has never heard of neighborhood analysis cannot ask about
+it -- but they do not need to understand it to record that the phrase exists and
+sits near "spatial niche." Understanding is deferred to the moment the term is
+actually needed. The blind spot is not ignorance of the concept; it is not
+possessing the word.
+
+`LEXICON.md` holds every term the system has ever seen:
+
+| Field | Meaning |
+|---|---|
+| `canonical` | preferred name |
+| `aliases` | every other surface form observed, verbatim |
+| `stage` | owning stage, **nullable** -- an unplaced term is still worth holding |
+| `status` | `seen` \| `mapped` \| `retired` |
+| `first_seen` | reference record id where it was harvested |
+
+Status semantics:
+
+- **`seen`** -- harvested, not yet understood, no chapter. Costs nothing to hold.
+- **`mapped`** -- has a chapter, or a section inside one.
+- **`retired`** -- the field moved on. **Never deleted**, because reading a 2019
+  paper still requires understanding its 2019 vocabulary. Same append-only
+  principle as reference records.
+
+**The loop this creates:**
+
+```
+map read -> term recorded (seen) -> a later question surfaces it
+         -> chapter written (mapped) -> term becomes a query handle
+         -> drives future update / retirement of that method
+```
+
+Two rules keep it from degenerating:
+
+1. **Record the surface form verbatim.** The extractor must not silently
+   normalize an unfamiliar term into a familiar one -- that is exactly how a
+   genuinely novel term gets collapsed into a known one and the signal is lost.
+   Normalization happens later, explicitly, by adding an alias.
+2. **Promotion is demand-driven.** A `seen` term becomes `mapped` when it either
+   appears in two or more independent maps, or is actually asked about.
+   Otherwise it sits in the lexicon indefinitely at zero cost. Without this, the
+   unknown-term backlog becomes noise and the lexicon stops being read.
+
+##### Wiring to existing code
+
+`router.py` already carries `METHOD_ALIASES` (`:15`) and
+`IMPLEMENTATION_ALIASES` (`:29`), consumed by
+`_extract_aliases_in_query_order()` (`:132`) as an alias -> canonical lookup on
+word boundaries. `LEXICON.md` is the human-editable source those dicts are
+generated from.
+
+**Gap found:** there is no `STAGE_ALIASES`. Stage-level terms -- "neighborhood
+analysis", "niche identification", "spatial domain detection", "cellular
+neighborhoods" -- are neither methods nor implementations, so a question phrased
+as "spatial region niche analysis" currently has nothing to match against. This
+dict must be added; it is the one that makes the lexicon reachable from a
+question asked in the user's own words rather than the field's.
+
+#### 3.4.3 Role of the PCa pipeline, restated
 
 Tier 1 is the **lagging confirmation feed**: it reports which methods were
 actually adopted in this specific field, which is real signal and available for
@@ -408,6 +473,8 @@ either.
 
 | Component | Location | Role here |
 |---|---|---|
+| `METHOD_ALIASES` / `IMPLEMENTATION_ALIASES` | `router.py:15`, `:29` | Generated from `LEXICON.md`. **`STAGE_ALIASES` must be added** (3.4.2). |
+| `_extract_aliases_in_query_order()` | `router.py:132` | Alias -> canonical lookup. Works as-is once the stage dict exists. |
 | `RouterMode` (5 modes) | `schema.py:8-16` | Classifies the question. `STALENESS_CHECK` is the "what changed" path. |
 | `ArtifactType` | `schema.py:18-26` | `LIFECYCLE_REPORT` and `STAGE_MAP` map onto chapters. |
 | `SourceRef` / `SourceRefKind` | `schema.py:80-97` | Reference record schema (section 4). |
@@ -467,6 +534,11 @@ Explicitly deferred until a real chapter proves the need:
 - [ ] The stage list in `INDEX.md` was seeded from a named review's section
       headings (D1 / 3.4), and that review is recorded as a reference record so
       the next coverage audit has a baseline to diff against.
+- [ ] `LEXICON.md` exists and holds at least one `seen` term that has **no**
+      chapter -- proving the design can hold a term it does not yet understand.
+- [ ] A question phrased in the user's own words, not the field's, reaches the
+      right chapter through an alias (the "spatial region niche analysis" ->
+      "neighborhood analysis" path). Requires `STAGE_ALIASES` in `router.py`.
 
 ---
 
