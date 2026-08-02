@@ -268,11 +268,62 @@ into one concept when they share a candidate method set.** This is serviceable
 because the system exists to support method decisions, so that is the granularity
 its consumers operate at. Expect to adjust it on contact with real chapters.
 
+##### Why not key on mechanism instead
+
+A tempting alternative is to key concepts on the shared underlying algorithm --
+for clustering: latent space -> pairwise distance -> optional dimensionality
+reduction -> community assignment. That machinery is genuinely shared across
+cell annotation, classification, and clustering, and mechanism is more stable
+than terminology because the math does not get renamed.
+
+It is rejected as the *key* for three reasons, though it is retained as an edge:
+
+1. **Mechanism-coherence is not decision-coherence.** A CNN classifier and
+   Leiden share that high-level machinery, but no user chooses between them --
+   one is unsupervised discovery, the other supervised prediction; they belong
+   to different situations. Conversely Leiden and a reference-mapping annotator
+   (Azimuth, SingleR) have entirely different mechanisms yet are a real
+   either/or for "how do I get cell types onto this data." Keying on mechanism
+   groups things nobody reads as a unit and splits things that must be compared.
+   This system is decision-support, so it keys on the decision.
+2. **"High level" has no natural stopping point.** One abstraction step up,
+   everything is "fit a function to data"; one step down, Leiden and Louvain
+   differ materially. Mechanism does not dissolve the granularity problem, it
+   re-poses it as "which level of mechanism."
+3. **Mechanism requires understanding, and so cannot be the entry key.** A term
+   can be recorded before it is understood (3.4.2, the property the whole
+   harvest step depends on). A mechanism cannot. Keying on mechanism would
+   reject exactly the unknown terms the design exists to capture.
+
+**Resolution.** Mechanism is late-binding and lives on an edge, not on the key:
+`shares_mechanism_with` joins the edge vocabulary. A term enters placed
+provisionally by its *question*, gets a mechanism once understood, and forks
+only if that reveals a real split. The explanatory value ("a CNN is doing the
+same thing Leiden is doing") is preserved and traversable without distorting the
+chapter set.
+
+##### Evolution rules
+
+The taxonomy is expected to evolve rather than be settled once. Because chapters
+are derived (D5), a fork is "re-key the records and regenerate," not a hand
+migration -- so evolution is cheap by construction.
+
+One asymmetry governs how to move:
+
+- **Merging is mechanical**: reassign every record of concept A to B, regenerate.
+- **Splitting needs per-record judgment**: which side does each piece of evidence
+  belong on?
+
+Therefore the operating rule is **not** "start coarse." It is: **prefer
+`concept: null` over a guess.** An unplaced term costs nothing and the affordance
+already exists; a wrongly-placed record is a debt repayable only in judgment.
+Never force a placement to avoid an empty field.
+
 **Gap found:** concepts split and merge over time -- "clustering" shed cell-type
 annotation as a separate concern. `MethodGraphEdge.ALLOWED_EDGE_TYPES`
 (`schema.py:154+`) carries `replaces_or_modernizes` and `competes_with` but has
-no `split_into` / `merged_from`. Both must be added, or concept history cannot
-be represented at all.
+no `split_into`, `merged_from`, or `shares_mechanism_with`. All three must be
+added, or neither concept history nor the mechanism relation can be represented.
 
 ##### Lexicon record
 
@@ -548,7 +599,7 @@ either.
 | Component | Location | Role here |
 |---|---|---|
 | `METHOD_ALIASES` / `IMPLEMENTATION_ALIASES` | `router.py:15`, `:29` | Generated from `LEXICON.md`. **`CONCEPT_ALIASES` must be added** (3.4.2). |
-| `MethodGraphEdge.ALLOWED_EDGE_TYPES` | `schema.py:154+` | **`split_into` / `merged_from` must be added** -- concept history is unrepresentable without them. |
+| `MethodGraphEdge.ALLOWED_EDGE_TYPES` | `schema.py:154+` | **`split_into`, `merged_from`, `shares_mechanism_with` must be added** -- concept history and the mechanism relation are unrepresentable without them. |
 | `_extract_aliases_in_query_order()` | `router.py:132` | Alias -> canonical lookup. Works as-is once the stage dict exists. |
 | `RouterMode` (5 modes) | `schema.py:8-16` | Classifies the question. `STALENESS_CHECK` is the "what changed" path. |
 | `ArtifactType` | `schema.py:18-26` | `LIFECYCLE_REPORT` and `STAGE_MAP` map onto chapters. |
@@ -613,6 +664,9 @@ Explicitly deferred until a real chapter proves the need:
       concept -- proving the design can hold a term it does not yet understand.
 - [ ] At least one concept carries **two or more labels**, demonstrating that a
       rename is an append rather than a migration.
+- [ ] At least one `shares_mechanism_with` edge exists between methods that sit
+      in **different** chapters -- proving mechanism is captured without
+      distorting the decision-keyed chapter set.
 - [ ] A question phrased in the user's own words, not the field's, reaches the
       right chapter (the "spatial region niche analysis" -> "neighborhood
       analysis" path) -- via `CONCEPT_ALIASES` on tier 1, or semantic match on
