@@ -41,7 +41,8 @@ tuning problem.
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | Methods are **enumerated top-down** from the pipeline-stage list, not discovered by keyword sweep | Single-cell/spatial has order 12-18 stages x 5-10 serious methods. That is a finite, writable list. Sweeping PubMed for "methods" floods the corpus with no gain in coverage. |
+| D1 | The taxonomy is **seeded from the field's own maps** -- reviews, tool docs, benchmarks -- not from keyword search and not from the analyst's memory | Both alternatives fail on unknown unknowns. A keyword sweep cannot return a method you cannot name; enumerating "top-down from the stage list" only moves the same blind spot from PubMed into the analyst's head. Reviews and tutorial indices are enumerations *already written by people who know the whole field*. See section 3.4. |
+| D1a | Keyword retrieval is retained, scoped to **evidence for an already-named `(stage, method)` pair** | "scRNA clustering" is noise; "Leiden connectivity guarantee, benchmark" is precise. `source_plan.py` keeps its job, but stops deciding what exists. |
 | D2 | Knowledge lives in **`dotfiles`**, code stays in **`Litintel`** | Clean split: knowledge is universal and must outlive the pipeline; code is PCa-scoped. `dotfiles` is already a separate repo, so this satisfies the repo-separation goal without a new repo. |
 | D3 | **Git is the source of truth. Notion is a view.** | The requirement is a traceable history of what changed and why. `git log -p` is exactly that, for free, diffable and offline. Notion page history is time-limited, not diffable, and not agent-queryable. `storage/notion.py` also truncates every text property to 2000 chars, which method chapters will exceed immediately. |
 | D4 | **Two layers**: curated evidence (append-only) -> synthesized chapters (derived) | Derived-and-committed chapters make the change log automatic and guarantee the synthesis cannot drift from its evidence. |
@@ -146,6 +147,65 @@ deploys to three harnesses. Therefore:
 - `references/` is never bulk-loaded. It is read only on the audit path
   ("why did this status change?") or when regenerating a chapter.
 
+### 3.4 Discovery: how the taxonomy gets populated
+
+This is the load-bearing section. Two obvious approaches both fail, and they
+fail the same way:
+
+- **Keyword search over primary literature.** Noisy at useful breadth ("scRNA
+  clustering" returns thousands of irrelevant hits), and structurally incapable
+  of returning a method the searcher cannot name.
+- **Waiting for the PCa pipeline to surface methods.** A method reaches the
+  corpus only once someone applies it to prostate cancer and publishes. That is
+  a lag of years, and for most methods it never happens at all.
+
+Both are instances of the same defect: **you cannot query for what you do not
+know exists.** Someone new to spatial transcriptomics does not know to ask about
+neighborhood analysis, so no query formulation will surface it.
+
+**The resolution: do not derive the field map. Read the maps the field already
+publishes.** Enumeration is a reading problem, not a search problem.
+
+| Source class | What it enumerates | Unknown it closes |
+|---|---|---|
+| Best-practice / review papers | the analysis pipeline, stage by stage | "I do not know that stage exists" -- the review has a section named after it |
+| Tool docs and tutorial tables of contents | the tasks an ecosystem treats as standard | same, from the implementer's side. A mature package's tutorial index is a task map written by its authors |
+| Benchmarking papers | competing methods inside one stage | "do I know all the options for this stage?" |
+| Ecosystem release notes (scverse, Bioconductor, package changelogs) | what changed since the last check | "what appeared this year?" -- deterministic, no LLM required |
+
+A review's **section headings are the stage taxonomy.** Candidate anchors for
+single-cell: Luecken & Theis 2019 (Mol Syst Biol) and Heumos et al. 2023 (Nat
+Rev Genet, best practices across modalities). Spatial has equivalents not yet
+identified. `# VERIFY: confirm exact citations and current spatial equivalents
+before any of them is written into a chapter.`
+
+Precedent already in this repo family: `skills/bioinfo-code/references/ArchR/`
+mirrors the ArchR manual's chapter structure. That is this move, applied one
+level down -- taking a map someone else already drew.
+
+#### 3.4.1 Coverage audit (the honest answer to unknown unknowns)
+
+Completeness cannot be proven. It can be made **auditable**, which is the
+strongest available claim:
+
+- **Between stages.** Take the newest best-practice review's section list. Diff
+  it against `chapters/`. The delta is the blind spot, named. Run on major
+  review publication, roughly every 12-18 months.
+- **Within a stage.** Diff a benchmark paper's method table against that
+  chapter's status table. The delta is the missing option set.
+
+This converts an open-ended worry into a scheduled, mechanical check with a
+concrete output. It is the only part of this design that addresses unknown
+unknowns, so it is not optional.
+
+#### 3.4.2 Role of the PCa pipeline, restated
+
+Tier 1 is the **lagging confirmation feed**: it reports which methods were
+actually adopted in this specific field, which is real signal and available for
+free. It is explicitly *not* a discovery channel. A method must already exist in
+the taxonomy before Tier 1 can confirm adoption of it -- so the ordering is
+seed-from-maps first, confirm-from-corpus second, never the reverse.
+
 ---
 
 ## 4. Layer 1: reference records
@@ -167,6 +227,10 @@ source_ref:
   kind: doi              # pmid | doi | url | docs_url | github_url | personal_obs
   value: "10.1038/s41598-019-41695-z"
   note: "Traag, Waltman, van Eck 2019"
+citation:                # REQUIRED when source_ref.kind is pmid or doi
+  first_author: "Traag"
+  journal: "Sci Rep"
+  year: 2019
 confidence: high         # high | medium | low
 ---
 
@@ -181,21 +245,42 @@ That is the readability win: the record renders in VSCode preview and on GitHub,
 and the part a human actually reads is plain text. Frontmatter carries only what
 a machine needs to index on.
 
+#### Citation is mandatory, not decorative
+
+`citation` is **required** whenever `source_ref.kind` is `pmid` or `doi`. A
+record citing a paper without first author, journal, and year is invalid and the
+generator must reject it.
+
+Rationale: the primary reader of a chapter is not only the author. A PI
+evaluating a method recommendation will weigh venue and recency whether or not
+the author does, and a recommendation that cannot show where its evidence was
+published is not defensible in that conversation. The design does not take a
+position on impact factor; it only guarantees the information is present.
+
+All three fields are already retrievable for free -- `pubmed/client.py` returns
+journal, year, and authors on every `efetch`, so the usage feed populates this
+with no extra call. Manual and `docs_url` / `github_url` records fill what
+applies and omit the block otherwise.
+
 The `source_ref` block is deliberately **field-identical to
 `methodintel/schema.py::SourceRef` (`:91`)**, and `kind` reuses
 `SourceRefKind` (`:80`) verbatim, including `personal_obs`. A record maps to
 one `EvidenceClaim` (`schema.py:99`) -- frontmatter to fields, body to
 `statement` -- with no translation layer.
 
-### 4.1 Three feeds
+### 4.1 Four feeds
+
+Ordered by when they run, not by volume. Feed 1 is the only one that can
+introduce a *new stage*; the rest populate stages that already exist.
 
 | Feed | Source | Kind | Cost |
 |---|---|---|---|
-| Usage signal | Pass 2 output on records scoring `>= pass2_min_score` (88), `enrich/ai_client.py::enrich_pass2_methods` | `usage` | free -- already computed today |
-| Targeted evidence | Agent retrieval for a **named** method, via `source_plan.py::build_source_plan()` (`:4`) | `benchmark`, `best_practice`, `deprecation` | small, on demand |
-| Personal observation | Hand-written from Apollo / pipeline work | `personal` | free |
+| **1. Field maps** (3.4) | Review section headings, tool tutorial indices, benchmark tables | `best_practice`, `benchmark` | small, a few reads per refresh |
+| 2. Targeted evidence | Agent retrieval for an **already-named** `(stage, method)`, via `source_plan.py::build_source_plan()` (`:4`) | `benchmark`, `deprecation` | small, on demand |
+| 3. Personal observation | Hand-written from Apollo / pipeline work | `personal` | free |
+| 4. Usage signal (lagging) | Pass 2 output on records scoring `>= pass2_min_score` (88), `enrich/ai_client.py::enrich_pass2_methods` | `usage` | free -- already computed today |
 
-The third feed is the differentiator. Benchmark papers are public and any agent
+Feed 3 is the differentiator. Benchmark papers are public and any agent
 can find them; "ArchR Louvain failed this way on our spatial ATAC data" exists
 nowhere else. Over years this is what makes the base better than a search rather
 than merely more stable than one.
@@ -251,14 +336,42 @@ Required sections:
 3. **Tradeoffs** -- when each option becomes the better choice and what it costs.
 4. **What changed** -- most recent status transitions, each citing the reference
    record id that caused it.
-5. **Evidence table** -- every claim with its `source_ref`, and its `verified`
-   flag from `verify.py::verify_evidence_claims()` (`:26`).
+5. **References** -- numbered bibliography, paper-style (see 5.2).
 6. **Open questions** -- what is unresolved, tagged for a future pass.
 
 Every claim in a chapter must carry a reference record id. A chapter sentence
 with no backing record is a generation bug, not an editorial choice.
 
-### 5.1 Method vs implementation, kept separate
+### 5.1 Citation rendering
+
+Prose carries inline numeric markers; the chapter foot carries the numbered
+list. It reads like a paper:
+
+```markdown
+Leiden is preferred over Louvain because Louvain can produce disconnected
+communities, while Leiden guarantees connectivity [1]. Adoption in spatial
+ATAC followed within two years [2,3].
+
+## References
+
+1. Traag et al. Sci Rep (2019). doi:10.1038/s41598-019-41695-z  [verified]
+2. ...
+```
+
+**Numbers are cosmetic and assigned at render time.** The stable identifier is
+always the reference record id. Two consequences that matter:
+
+- Section 4 ("What changed") cites **record ids, never numbers**, so the
+  semantic history stays stable when the bibliography renumbers.
+- Inserting a claim renumbers everything after it. That diff is noise, but it is
+  confined to the References block and the inline markers -- it cannot corrupt
+  the changelog, which is what D5 protects.
+
+The `verified` flag from `verify.py::verify_evidence_claims()` (`:26`) renders
+as a badge on the bibliography entry rather than as its own table, which keeps
+the chapter lighter than the earlier separate-evidence-table design.
+
+### 5.2 Method vs implementation, kept separate
 
 `schema.py::MethodOption` already splits `algorithm` from `implementation`
 (`:127-128`) precisely because one algorithm is exposed by several packages with
@@ -347,28 +460,42 @@ Explicitly deferred until a real chapter proves the need:
       and every claim carries a record id.
 - [ ] A Claude session answers a clustering method question from the chapter
       **without a web search**, with citations.
+- [ ] Every cited `pmid`/`doi` record carries first author, journal, and year,
+      and the chapter renders them as a numbered bibliography (5.1).
 - [ ] Tier 1 emits at least one `usage` record into `references/` on a real run.
 - [ ] A status change is demonstrable as a `git diff` on the chapter.
+- [ ] The stage list in `INDEX.md` was seeded from a named review's section
+      headings (D1 / 3.4), and that review is recorded as a reference record so
+      the next coverage audit has a baseline to diff against.
 
 ---
 
 ## 9. Open questions
 
-1. **Stage taxonomy.** The chapter list must be fixed before generation.
-   `docs/methodintel_plan.md:480` proposes clustering, batch correction,
-   differential, annotation, motif/TF. The full 12-18 stage list is not yet
-   written down. `# VERIFY: enumerate against the Apollo pipeline stages.`
-2. **Chapter regeneration cost.** Not yet estimated.
+1. **Stage taxonomy -- the one blocking item.** *Method* is now settled (D1 /
+   3.4: seed from a review's section headings, not from memory), but the
+   *source* is not chosen. Needs: one named single-cell best-practice review
+   and one spatial equivalent, current as of 2026.
+   `# VERIFY: confirm Luecken & Theis 2019 (Mol Syst Biol) and Heumos et al.
+   2023 (Nat Rev Genet) exist as cited, and identify the spatial counterpart --
+   none is confirmed yet.` `docs/methodintel_plan.md:480` supplies five
+   candidate stages, which is a starting overlap to diff against, not the list.
+2. **Coverage-audit cadence.** 3.4.1 proposes running the between-stage diff on
+   major review publication (~12-18 months). Whether that is manual, or a
+   `staleness_check` invocation, is undecided.
+3. **Chapter regeneration cost.** Not yet estimated.
    `docs/methodintel_plan.md:287` budgets <= 50k input / <= 10k output tokens
    per dossier; a chapter is a different unit and the number does not
    necessarily transfer.
-3. **Notion methods DB schema.** Deferred (section 7), so its property mapping
+4. **Notion methods DB schema.** Deferred (section 7), so its property mapping
    is undefined. Not blocking.
-4. ~~Whether `trunk_write_guard.sh` blocks the cross-repo write.~~ **Resolved**
+5. ~~Whether `trunk_write_guard.sh` blocks the cross-repo write.~~ **Resolved**
    -- see the table in 4.2. Both repos are opted in; the hook policies agent
    `Edit`/`Write` tool calls only, not Bash/Python writes. Design now routes
    through `dotfiles-claude` so one rule covers both paths.
-5. `setup.sh` uses `cp -f` for Codex in three places beyond skills -- hooks
-   (`:317-318`) and dispatch bin (`:478-479`). If Codex symlink support is
-   confirmed, those are candidates for the same one-line change, but they are
-   outside this spec's scope.
+6. ~~Codex symlink support in `setup.sh`.~~ **Closed by owner decision
+   (2026-08-02): leave as is.** `cp -f` appears for Codex at `:165` (skills),
+   `:317-318` (hooks), and `:478-479` (dispatch bin); changing one without the
+   others is inconsistent, and the hook paths carry more risk than the benefit
+   justifies. Consequence to accept: editing an existing chapter is live for
+   Claude and Gemini but requires a `setup.sh` run for Codex.
