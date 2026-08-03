@@ -34,13 +34,22 @@ _HTML_HEADING = re.compile(r"<h[1-6][^>]*>", re.IGNORECASE)
 # at the call site, not in this regex), and never inside a fenced code block
 # (also checked at the call site; fix round 3 finding 6).
 _SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
-# A fenced code block delimiter, opening or closing: 0-3 leading spaces then
-# 3+ backticks or 3+ tildes (CommonMark). Toggled as a simple on/off flag
-# while scanning a section's lines -- this project takes no new dependency,
-# so there is no real Markdown parser backing this; it is a hand-rolled
-# approximation good enough to keep code examples in prose from being
-# mistaken for headings, which is all `validate_prose` needs.
-_FENCE_MARKER = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# Fenced code block delimiters. This project takes no new dependency, so there
+# is no real Markdown parser backing these; they are hand-rolled, but they
+# follow CommonMark's two asymmetric rules exactly, because fix round 3's
+# single on/off toggle got both wrong:
+#
+#   opening -- 0-3 leading spaces, then a run of 3+ backticks or 3+ tildes,
+#              optionally followed by an info string (```python).
+#   closing -- the SAME character as the opener, in a run at least as long,
+#              and nothing after it but whitespace. A ``` run does not close
+#              a ~~~ fence, and a shorter run does not close a longer one.
+#
+# Tracking the opening run (not a boolean) is what makes both rules
+# expressible; an unclosed fence then falls out as "still holding a marker at
+# end of section" (fix round 4).
+_FENCE_OPEN = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})")
+_FENCE_CLOSE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})[ \t]*$")
 
 # Gemini runs in JSON mode here (ai_client._call_gemini is JSON-only), so the
 # section split is enforced by the schema rather than by parsing labelled text.
@@ -62,7 +71,9 @@ _SYSTEM_PROMPT = (
     "followed by a line of only '=' or only '-' characters), and not an HTML "
     "heading tag ('<h1>' through '<h6>') -- because your prose is inserted "
     "directly into a chapter that already has its own headings; write plain "
-    "prose paragraphs only."
+    "prose paragraphs only. If you open a fenced code block you must close it "
+    "with the same delimiter, because an unclosed fence hides the chapter's "
+    "own headings below it."
 )
 
 _PROMPT_HEADER = """You are writing one chapter of a curated bioinformatics
@@ -131,12 +142,22 @@ def validate_prose(payload: dict) -> dict[str, str]:
     or opening the section, is a legitimate horizontal rule/divider and must
     stay legal prose.
 
-    Neither the ATX nor the setext check applies inside a fenced code block
-    (fix round 3, finding 6): a dash line in a code example is ordinary
-    prose about computational methods, not a heading, and over-rejecting it
-    would hard-fail chapter generation on entirely normal content -- worse
-    than the bypass it would be closing, since the bypass needs the model to
-    misbehave while this would fire on correct output.
+    No heading check applies inside a fenced code block (fix round 3,
+    finding 6): a dash line in a code example is ordinary prose about
+    computational methods, not a heading, and over-rejecting it would
+    hard-fail chapter generation on entirely normal content -- worse than the
+    bypass it would be closing, since the bypass needs the model to misbehave
+    while this would fire on correct output.
+
+    A fence that is never closed is itself rejected (fix round 4). Round 3's
+    boolean toggle read an unclosed fence as "checking is off from here on",
+    which looks safe and is the opposite: assemble_chapter concatenates this
+    prose into a chapter, and an open fence swallows every deterministic
+    heading BELOW it into an inert code block (measured: 2 of 8 headings
+    survived). That is suppression of the deterministic half by the model
+    half -- the same corruption as a fabricated heading, arriving from the
+    other direction -- so it is caught here, at the section that caused it,
+    rather than downstream in a chapter no longer traceable to a section.
 
     Non-ASCII content is rejected (fix round 2, finding 4): the system
     prompt asks for ASCII, but this project's ASCII-only rule does not get
@@ -173,12 +194,28 @@ def validate_prose(payload: dict) -> dict[str, str]:
             )
 
         lines = value.splitlines()
-        in_fence = False
-        for index, line in enumerate(lines):
-            if _FENCE_MARKER.match(line):
-                in_fence = not in_fence
+        # The opening fence run while inside a fence, "" while outside.
+        open_fence = ""
+        # The paragraph line a setext underline would underline, "" when there
+        # is none. A fence delimiter and any line inside a fence are not
+        # paragraph text, so a '-----' directly below one is a thematic break,
+        # not a heading (confirmed against a CommonMark renderer).
+        text_above = ""
+
+        for line in lines:
+            if open_fence:
+                closing = _FENCE_CLOSE.match(line)
+                if closing:
+                    marker = closing.group("marker")
+                    if marker[0] == open_fence[0] and len(marker) >= len(open_fence):
+                        open_fence = ""
+                text_above = False
                 continue
-            if in_fence:
+
+            opening = _FENCE_OPEN.match(line)
+            if opening:
+                open_fence = opening.group("marker")
+                text_above = False
                 continue
 
             if _ATX_HEADING.match(line):
@@ -193,17 +230,23 @@ def validate_prose(payload: dict) -> dict[str, str]:
                     "line %r -- prose must not emit headings"
                     % (section, line.strip())
                 )
-            if (
-                _SETEXT_UNDERLINE.match(line)
-                and index > 0
-                and lines[index - 1].strip()
-            ):
+            if _SETEXT_UNDERLINE.match(line) and text_above:
                 raise ValueError(
                     "model response section %s contains a setext heading "
                     "underline %r beneath the text %r -- prose must not "
                     "emit headings"
-                    % (section, line.strip(), lines[index - 1].strip())
+                    % (section, line.strip(), text_above)
                 )
+
+            text_above = line.strip()
+
+        if open_fence:
+            raise ValueError(
+                "model response section %s opens a fenced code block with %r "
+                "that is never closed -- an unclosed fence swallows every "
+                "deterministic heading after it in the assembled chapter"
+                % (section, open_fence)
+            )
 
         prose[section] = value.strip()
 

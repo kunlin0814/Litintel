@@ -281,6 +281,199 @@ def test_validate_prose_allows_a_four_space_indented_dash_line():
     assert "    -----" in prose["tradeoffs"]
 
 
+# --- Fix round 4: the fence toggle was wrong in two directions ---
+#
+# Round 3 tracked fences with a single boolean. That made an unclosed fence
+# read as "checking is off from here on" -- which looks safe and is the
+# opposite, because assemble_chapter concatenates this prose into a chapter
+# and an open fence swallows every deterministic heading BELOW it into an
+# inert code block (measured through a CommonMark renderer: 2 of 9 headings
+# survived). It also let any fence marker close any other, so a ``` block
+# "closed" by ~~~ resumed checking mid-code-block and rejected the code's own
+# dash lines as fake setext headings.
+#
+# Both follow from tracking the opening run instead of a boolean: a fence is
+# closed only by the SAME character in a run at least as long, and a section
+# still holding a marker at the end never closed its fence.
+
+
+def test_validate_prose_rejects_an_unclosed_backtick_fence():
+    """Defect 1. The section that opens the fence is named, because the
+    damage lands in a chapter assembled from three sections and the error
+    has to point back at the one that caused it."""
+    with pytest.raises(ValueError, match="never closed"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "Example:\n```\nsc.tl.leiden(adata)\nno closing fence",
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_rejects_an_unclosed_tilde_fence():
+    with pytest.raises(ValueError, match="never closed"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "Example:\n~~~\nsc.tl.leiden(adata)\nno closing fence",
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_rejects_a_fence_a_shorter_run_cannot_close():
+    """A ``` run does not close a ```` fence (CommonMark: the closing run must
+    be at least as long), so this fence is open at the end of the section."""
+    with pytest.raises(ValueError, match="never closed"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "Example:\n````\ncode\n```\nstill inside the fence",
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_rejects_a_closing_fence_carrying_an_info_string():
+    """CommonMark forbids an info string on a CLOSING fence, so '```python'
+    opens nothing and closes nothing -- the first fence stays open."""
+    with pytest.raises(ValueError, match="never closed"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "Example:\n```\ncode\n```python\nstill inside",
+            "open_questions": "x",
+        })
+
+
+def test_unclosed_fence_error_names_the_section_and_the_marker():
+    """The exact diagnostic, since it is what a failed chapter run prints."""
+    with pytest.raises(ValueError) as excinfo:
+        validate_prose({
+            "recommendation": "Use Leiden.\n\n```\nsc.tl.leiden(adata)",
+            "tradeoffs": "x",
+            "open_questions": "y",
+        })
+
+    assert str(excinfo.value) == (
+        "model response section recommendation opens a fenced code block "
+        "with '```' that is never closed -- an unclosed fence swallows every "
+        "deterministic heading after it in the assembled chapter"
+    )
+
+
+def test_unclosed_fence_is_rejected_before_it_can_reach_assemble_chapter():
+    """The suppression case in full. This prose renders 2 of the chapter's 9
+    headings (the two ABOVE the open fence); '## Status', '## Borrowed and
+    broken', '## Tradeoffs', '## What changed', '## References' and
+    '## Open questions' all vanish into the code block. Verified through a
+    CommonMark renderer out of band -- no renderer is imported here, since
+    the suite takes no Markdown-parser dependency."""
+    from unittest.mock import patch
+
+    payload = {
+        "recommendation": "Use Leiden via leidenalg.\n\n```\nsc.tl.leiden(adata)",
+        "tradeoffs": "Louvain is faster.",
+        "open_questions": "Resolution selection.",
+    }
+
+    with patch(
+        "litintel.enrich.ai_client._call_gemini",
+        return_value=(payload, {"input": 1}),
+    ), patch("litintel.enrich.ai_client._get_gemini_client", return_value="CLIENT"):
+        with pytest.raises(ValueError, match="never closed"):
+            synthesize_prose("clustering", [_record()], "gemini-x", "MEDIUM")
+
+
+def test_validate_prose_rejects_an_html_heading_split_across_lines():
+    """The tag opens its own line and the text sits below it -- still a real
+    <h2> once rendered, so it must not pass just because the tag and its
+    content are not on one line."""
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "<h2>\nStatus\n</h2>\nLouvain is faster.",
+            "open_questions": "x",
+        })
+
+
+# The negative cases. Defect 2 is an OVER-rejection, and an over-rejection
+# hard-fails chapter generation on correct model output -- prose about
+# computational methods is full of code examples, so these matter at least as
+# much as the rejections above.
+
+
+def test_validate_prose_allows_a_tilde_line_inside_a_backtick_fence():
+    """Defect 2, exactly. Round 3 let '~~~' close a '```' fence, which
+    resumed heading checks in the middle of a code block and rejected the
+    block's own dash line as a setext underline. CommonMark keeps the fence
+    open here, so the whole thing is code and nothing in it is a heading."""
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example:\n```\nHeader\n~~~\nStatus\n-----\nMore\n```\nDone.",
+        "open_questions": "x",
+    })
+
+    assert "-----" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_backtick_line_inside_a_tilde_fence():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example:\n~~~\nHeader\n```\nStatus\n-----\nMore\n~~~\nDone.",
+        "open_questions": "x",
+    })
+
+    assert "-----" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_shorter_fence_run_inside_a_longer_fence():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example:\n````\nHeader\n```\nStatus\n-----\nMore\n````\nDone.",
+        "open_questions": "x",
+    })
+
+    assert "-----" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_fence_with_an_info_string():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example:\n```python\nsc.tl.leiden(adata)\n# not a heading\n```\nDone.",
+        "open_questions": "x",
+    })
+
+    assert "sc.tl.leiden(adata)" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_an_indented_fence():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example:\n   ```\n   Header\n   ----\n   ```\nDone.",
+        "open_questions": "x",
+    })
+
+    assert "----" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_dash_line_directly_after_a_closed_fence():
+    """A closing fence line is not paragraph text, so a '-----' directly
+    below it is a thematic break, not a setext underline (confirmed against a
+    CommonMark renderer: it emits <hr />, no heading)."""
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example:\n```\ncode\n```\n-----\nMore prose.",
+        "open_questions": "x",
+    })
+
+    assert "-----" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_nested_indented_list_items():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Options:\n- Leiden\n  - leidenalg\n    - igraph backend\n- Louvain",
+        "open_questions": "x",
+    })
+
+    assert "    - igraph backend" in prose["tradeoffs"]
+
+
 # --- Fix round 1, finding 3: an unrecognised key must raise, not be dropped ---
 
 
