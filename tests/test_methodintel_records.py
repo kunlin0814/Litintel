@@ -208,3 +208,53 @@ def test_resolve_methods_root_expands_user(tmp_path, monkeypatch):
 
 def test_resolve_methods_root_returns_path_for_valid_dir(tmp_path):
     assert resolve_methods_root(str(tmp_path)) == tmp_path
+
+
+def test_unterminated_frontmatter_fails_loud(tmp_path):
+    text = "---\nid: x\n"
+    with pytest.raises(RecordError, match="unterminated"):
+        parse_record(_write(tmp_path, "r.md", text))
+
+
+def test_invalid_yaml_frontmatter_fails_loud(tmp_path):
+    text = "---\nid: [unterminated\n---\nbody\n"
+    with pytest.raises(RecordError, match="not valid YAML"):
+        parse_record(_write(tmp_path, "r.md", text))
+
+
+def test_non_mapping_frontmatter_fails_loud(tmp_path):
+    text = "---\n- a\n- b\n---\nbody\n"
+    with pytest.raises(RecordError, match="mapping"):
+        parse_record(_write(tmp_path, "r.md", text))
+
+
+def test_unknown_top_level_key_is_rejected(tmp_path):
+    """A typo'd key (e.g. 'consept') must raise, not silently drop to default."""
+    text = VALID.replace("concept: clustering", "consept: clustering\nconcept: clustering")
+    with pytest.raises(RecordError, match="Extra inputs are not permitted"):
+        parse_record(_write(tmp_path, "r.md", text))
+
+
+def test_unknown_source_ref_key_is_rejected(tmp_path):
+    text = VALID.replace(
+        'note: "Traag, Waltman, van Eck 2019"',
+        'note: "Traag, Waltman, van Eck 2019"\n  bogus: xyz',
+    )
+    with pytest.raises(RecordError, match="Extra inputs are not permitted"):
+        parse_record(_write(tmp_path, "r.md", text))
+
+
+def test_more_than_one_leading_comment_fails_loud(tmp_path):
+    """At most one leading '<!-- path -->' comment is tolerated, not several."""
+    text = "<!-- a -->\n<!-- b -->\n" + VALID
+    with pytest.raises(RecordError, match="frontmatter"):
+        parse_record(_write(tmp_path, "r.md", text))
+
+
+def test_seed_rung_quoted_string_is_rejected(tmp_path):
+    """seed_rung: "1" must not silently coerce to the int 1 (spec D8: machine-strict)."""
+    text = VALID.replace("kind: benchmark", "kind: seed").replace(
+        "seed_rung: null", 'seed_rung: "1"'
+    )
+    with pytest.raises(RecordError, match="valid integer"):
+        parse_record(_write(tmp_path, "r.md", text))

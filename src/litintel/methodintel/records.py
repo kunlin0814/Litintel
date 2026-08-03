@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from litintel.methodintel.schema import SourceRef, SourceRefKind
 
@@ -45,12 +45,28 @@ class RecordError(ValueError):
 
 
 class Citation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     first_author: str
     journal: str
     year: int
 
 
+class _StrictSourceRef(SourceRef):
+    """SourceRef with unknown keys forbidden, local to record parsing.
+
+    schema.py::SourceRef itself is left untouched -- its other consumers
+    (EvidenceClaim, MethodGraphEdge) are outside this task's surgical scope
+    and may not want this strictness. Subclassing only adds the extra="forbid"
+    check that a hand-written frontmatter block needs; no fields are added.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ReferenceRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     concept: Optional[str] = None
     modality: List[str] = []
@@ -61,8 +77,11 @@ class ReferenceRecord(BaseModel):
     implementations: List[str] = []
     kind: str
     recorded: date
-    seed_rung: Optional[int] = None
-    source_ref: SourceRef
+    # strict=True: a hand-written "1" (quoted) must not silently coerce to
+    # the int 1. Frontmatter is machine-strict by design (spec D8); a typo'd
+    # quote should fail loud, not pass as if it were the same value.
+    seed_rung: Optional[int] = Field(default=None, strict=True)
+    source_ref: _StrictSourceRef
     citation: Optional[Citation] = None
     confidence: str
     body: str
@@ -73,21 +92,22 @@ def _split_frontmatter(text: str, path: Path) -> tuple[str, str]:
 
     Real records on disk lead with a single-line `<!-- path -->` HTML comment
     before the frontmatter fence (a file-path breadcrumb for readability).
-    Blank lines and that leading comment are skipped before the fence is
-    required; anything else before the fence is a malformed record.
+    Leading blank lines, then AT MOST ONE such comment line, then more
+    leading blank lines, are skipped before the fence is required. A second
+    comment line, or anything else before the fence, is a malformed record.
     """
     lines = text.splitlines()
 
-    start = 0
-    while start < len(lines):
+    def _skip_blank(index: int) -> int:
+        while index < len(lines) and not lines[index].strip():
+            index += 1
+        return index
+
+    start = _skip_blank(0)
+    if start < len(lines):
         stripped = lines[start].strip()
-        if not stripped:
-            start += 1
-            continue
         if stripped.startswith("<!--") and stripped.endswith("-->"):
-            start += 1
-            continue
-        break
+            start = _skip_blank(start + 1)
 
     if start >= len(lines) or lines[start].strip() != _FENCE:
         raise RecordError("%s: missing opening frontmatter fence" % path)
