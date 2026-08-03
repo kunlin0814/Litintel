@@ -12,6 +12,7 @@ from datetime import date
 
 from litintel.methodintel.modality import check_analysis_modalities
 from litintel.methodintel.records import ReferenceRecord
+from litintel.methodintel.schema import SourceRefKind
 
 
 # Record kinds that ASSERT a new current status for a (method, modality) pair,
@@ -30,9 +31,13 @@ from litintel.methodintel.records import ReferenceRecord
 #                      does not itself assert the new state. Not a
 #                      transition.
 #   personal       -- a hand-written observation from real pipeline work
-#                      (spec Feed 3); evidentiary like benchmark, but not an
-#                      assertion of a new status on its own. Not a
-#                      transition.
+#                      (spec Feed 3) that does NOT answer the
+#                      borrowed-and-broken question (e.g. "this package dies
+#                      above 50k cells"); evidentiary like benchmark, but
+#                      not an assertion of a new status. Not a transition.
+#                      An observation that DOES answer that question is
+#                      filed as kind="adaptation" instead -- see
+#                      _provenance_prefix.
 #   usage          -- a real-run signal of what was actually used (spec Feed
 #                      4); records a fact about a paper, not a status change.
 #                      Not a transition.
@@ -41,6 +46,30 @@ from litintel.methodintel.records import ReferenceRecord
 _TRANSITION_KINDS: frozenset[str] = frozenset({
     "deprecation", "adaptation", "best_practice",
 })
+
+# Marker for an entry whose evidence is the owner's own run, not a
+# publication.
+#
+# Tuning a borrowed method until it works on this data IS an adaptation, so
+# such an observation is filed as kind="adaptation" and reaches
+# "Borrowed and broken" (owner decision, 2026-08-03). `kind` says which
+# question the record answers; `source_ref.kind` says where the evidence came
+# from. They are separate axes, and this marker is what keeps the second one
+# legible after the first one has been decided.
+#
+# Without it, an unpublished n=1 sits in the audited section looking exactly
+# like a benchmarked finding, and the only tell is `confidence:` in a
+# frontmatter block the chapter's reader never opens. Rendered FIRST rather
+# than appended because a record body runs to several paragraphs, and a
+# provenance marker after it is a marker nobody reads.
+_UNPUBLISHED_MARKER = "**(own run, unpublished)**"
+
+
+def _provenance_prefix(record: ReferenceRecord) -> str:
+    """Leading marker for an own-run record, or "" for a published one."""
+    if record.source_ref.kind is SourceRefKind.PERSONAL_OBS:
+        return "%s " % _UNPUBLISHED_MARKER
+    return ""
 
 
 def render_bibliography(
@@ -164,7 +193,10 @@ def render_borrowed_and_broken(records: list[ReferenceRecord]) -> str:
         lines.append("")
         if adaptations[modality]:
             for record in sorted(adaptations[modality], key=lambda r: r.id):
-                lines.append("- %s  [id: %s]" % (record.body.strip(), record.id))
+                lines.append(
+                    "- %s%s  [id: %s]"
+                    % (_provenance_prefix(record), record.body.strip(), record.id)
+                )
         else:
             lines.append(
                 "- No adaptation record. This modality is **not audited** "
@@ -193,8 +225,13 @@ def render_what_changed(records: list[ReferenceRecord]) -> str:
         lines.append("- No status transitions recorded yet.")
     for record in transitions:
         lines.append(
-            "- %s: %s  [id: %s]"
-            % (record.recorded.isoformat(), record.body.strip(), record.id)
+            "- %s: %s%s  [id: %s]"
+            % (
+                record.recorded.isoformat(),
+                _provenance_prefix(record),
+                record.body.strip(),
+                record.id,
+            )
         )
 
     return "\n".join(lines)

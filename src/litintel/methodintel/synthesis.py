@@ -124,6 +124,12 @@ a claim, do not make it -- say the evidence is absent instead. Do not add
 knowledge from your training data; an unsupported sentence is a defect, not a
 helpful addition.
 
+EVERY sentence must carry at least one [id: ...] marker. There is no exemption
+for a framing or lead-in sentence. Do not open a field with a scene-setter such
+as "The records leave several key questions unresolved." or "The following
+tradeoffs apply." -- it states no claim, so it cannot cite one, and it will be
+rejected. Begin each field with its first real, cited claim.
+
 Where the records disagree by modality, say so rather than averaging them. A
 method that is standard for scRNA may be untested for spatial ATAC, and that
 distinction is the most valuable thing this chapter carries.

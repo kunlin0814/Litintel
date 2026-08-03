@@ -353,3 +353,97 @@ def test_records_with_no_modality_are_not_reported_as_no_records():
     assert "not audited" in block
     assert "No records for this concept yet" not in block
     assert "1 record(s)" in block
+
+
+def _own_run_record(record_id, kind="adaptation", modality=None,
+                    body="Tuning it fixed it.", recorded=date(2026, 8, 3)):
+    """A record whose evidence is the owner's own run, not a publication.
+
+    source_ref.kind="personal_obs" carries no citation, which records.py
+    permits: only pmid/doi sources are required to cite.
+    """
+    return ReferenceRecord(
+        id=record_id,
+        concept="clustering",
+        modality=["spatial_atac"] if modality is None else modality,
+        methods=["Louvain"],
+        implementations=["ArchR"],
+        kind=kind,
+        recorded=recorded,
+        source_ref=SourceRef(kind="personal_obs", value="Apollo run"),
+        citation=None,
+        confidence="medium",
+        body=body,
+    )
+
+
+def test_own_run_adaptation_reaches_borrowed_and_broken():
+    """Tuning a borrowed method until it works IS an adaptation (owner
+    decision 2026-08-03), so it must not be invisible in the deterministic
+    half just because its evidence is unpublished."""
+    block = render_borrowed_and_broken([_own_run_record("2026-08-03-own")])
+
+    assert "Tuning it fixed it." in block
+    assert "not audited" not in block
+
+
+def test_own_run_entry_is_marked_unpublished_in_borrowed_and_broken():
+    block = render_borrowed_and_broken([_own_run_record("2026-08-03-own")])
+
+    assert "**(own run, unpublished)**" in block
+
+
+def test_unpublished_marker_leads_the_entry_not_trails_it():
+    """A body runs to paragraphs; a marker after it is a marker nobody
+    reads. The marker must precede the body text."""
+    block = render_borrowed_and_broken(
+        [_own_run_record("2026-08-03-own", body="First words of the claim.")]
+    )
+
+    assert block.index("**(own run, unpublished)**") < block.index("First words")
+
+
+def test_published_adaptation_carries_no_unpublished_marker():
+    """The marker must distinguish, not decorate: a doi-sourced adaptation
+    in the same section stays unmarked."""
+    published = _record("2026-08-02-published", kind="adaptation",
+                        modality=["spatial_atac"], body="Published claim.")
+    block = render_borrowed_and_broken([published])
+
+    assert "Published claim." in block
+    assert "own run, unpublished" not in block
+
+
+def test_own_run_and_published_adaptations_are_told_apart_in_one_section():
+    """Both land under the same modality heading; only one is marked."""
+    block = render_borrowed_and_broken([
+        _record("2026-08-02-published", kind="adaptation",
+                modality=["spatial_atac"], body="Published claim."),
+        _own_run_record("2026-08-03-own", body="Own claim."),
+    ])
+
+    assert "Published claim." in block
+    assert "Own claim." in block
+    assert block.count("**(own run, unpublished)**") == 1
+    assert block.index("Published claim.") < block.index("Own claim.")
+
+
+def test_own_run_adaptation_is_marked_in_what_changed_too():
+    """adaptation is a transition, so an own-run adaptation enters the
+    changelog. It must carry its provenance there as well -- the changelog
+    is read on its own, without the section above it."""
+    block = render_what_changed([_own_run_record("2026-08-03-own")])
+
+    assert "**(own run, unpublished)**" in block
+    assert "2026-08-03:" in block
+
+
+def test_kind_personal_still_stays_out_of_the_transition_sections():
+    """Filing an own-run observation as `adaptation` is a choice the author
+    makes per record. A personal observation that does NOT answer the
+    borrowing question keeps kind="personal" and stays out."""
+    personal = _own_run_record("2026-08-03-crash", kind="personal",
+                               body="Dies above 50k cells.")
+
+    assert "Dies above 50k cells." not in render_what_changed([personal])
+    assert "not audited" in render_borrowed_and_broken([personal])
