@@ -4,6 +4,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from litintel.methodintel.lexicon import (
+    LexiconError,
     build_concept_aliases,
     parse_lexicon,
     parse_unplaced_terms,
@@ -172,3 +173,152 @@ def test_sources_prose_lines_are_ignored(tmp_path):
     assert [e.concept for e in entries] == ["dimensionality_reduction", "normalization"]
     assert entries[0].labels == ["dimensionality reduction"]
     assert entries[1].labels == ["normalization"]
+
+
+def test_label_claimed_by_two_concepts_raises_naming_both(tmp_path):
+    """Fix round 1, Finding 1: a label drifting under two concept headings is
+    among the most likely authoring mistakes LEXICON.md will ever see (that
+    is what the file is for), and a silent dict overwrite would route a
+    paper's evidence to whichever concept happened to parse last. The error
+    must name the label and both concepts so the owner can adjudicate.
+    """
+    text = (
+        "## clustering\n\n"
+        "Question: Which cells or spots form a group?\n\n"
+        "| Label | Since | Status |\n"
+        "|---|---|---|\n"
+        "| shared term | | |\n\n"
+        "## normalization\n\n"
+        "Question: How are counts made comparable?\n\n"
+        "| Label | Since | Status |\n"
+        "|---|---|---|\n"
+        "| shared term | | |\n"
+    )
+    path = tmp_path / "LEXICON.md"
+    path.write_text(text)
+
+    try:
+        build_concept_aliases(parse_lexicon(path))
+        assert False, "expected LexiconError"
+    except LexiconError as exc:
+        message = str(exc)
+        assert "shared term" in message
+        assert "clustering" in message
+        assert "normalization" in message
+
+
+def test_label_repeated_under_the_same_concept_is_deduped_silently(tmp_path):
+    """A label listed twice under one concept table is a harmless duplicate
+    (both occurrences already agree on the answer) -- it dedupes rather than
+    raising, unlike a cross-concept collision.
+    """
+    text = (
+        "## clustering\n\n"
+        "Question: Which cells or spots form a group?\n\n"
+        "| Label | Since | Status |\n"
+        "|---|---|---|\n"
+        "| clustering | 2015 | dominant |\n"
+        "| clustering | 2015 | dominant |\n"
+    )
+    path = tmp_path / "LEXICON.md"
+    path.write_text(text)
+
+    aliases = build_concept_aliases(parse_lexicon(path))
+
+    assert aliases == {"clustering": "clustering"}
+
+
+def test_unrelated_prose_after_a_complete_question_is_not_absorbed(tmp_path):
+    """Fix round 1, Finding 2: a Question: line that already ends in terminal
+    punctuation is complete. Continuation must stop there rather than
+    absorbing arbitrary prose that happens to follow with no blank-line
+    separator.
+    """
+    text = (
+        "## normalization\n\n"
+        "Question: How are counts made comparable?\n"
+        "This sentence is unrelated body prose, not part of the question.\n\n"
+        "| Label | Since | Status |\n"
+        "|---|---|---|\n"
+        "| normalization | | dominant |\n"
+    )
+    path = tmp_path / "LEXICON.md"
+    path.write_text(text)
+
+    entry = parse_lexicon(path)[0]
+
+    assert entry.question == "How are counts made comparable?"
+
+
+def _write_minimal_config(config_path, methods_repo_path):
+    config_path.write_text(
+        "pipeline_tier: 1\n"
+        "pipeline_name: test\n"
+        "discovery:\n"
+        "  mode: KEYWORD\n"
+        '  queries: ["test"]\n'
+        "ai:\n"
+        "  provider: gemini\n"
+        "  prompt_template: x\n"
+        "storage: {}\n"
+        "dedup: {}\n"
+        'methods_repo_path: "%s"\n' % methods_repo_path
+    )
+
+
+def test_sync_aliases_cli_prints_generated_table_and_unplaced_terms(tmp_path):
+    """Fix round 1, Finding 3: exercise the sync-aliases command itself
+    (against a temp copy of a lexicon, never the real one) rather than only
+    hand-verifying it -- Task 8 adds a second CLI command and Task 11's
+    acceptance drives the CLI, so this establishes the pattern.
+    """
+    from typer.testing import CliRunner
+
+    from litintel.cli import app
+
+    methods_root = tmp_path / "bioinfo-methods"
+    methods_root.mkdir()
+    (methods_root / "LEXICON.md").write_text(LEXICON)
+
+    config_path = tmp_path / "config.yaml"
+    _write_minimal_config(config_path, methods_root)
+
+    result = CliRunner().invoke(
+        app, ["methodintel", "sync-aliases", "--config", str(config_path)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert '"community detection": "clustering",' in result.output
+    assert '"niche identification": "neighborhood_analysis",' in result.output
+    assert "1 unplaced term(s) excluded" in result.output
+    assert "sepal" in result.output
+
+
+def test_sync_aliases_cli_reports_missing_methods_repo_path(tmp_path):
+    """The command must fail loud (not print an empty/partial table) when
+    methods_repo_path is unset, reusing records.resolve_methods_root's error.
+    """
+    from typer.testing import CliRunner
+
+    from litintel.cli import app
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "pipeline_tier: 1\n"
+        "pipeline_name: test\n"
+        "discovery:\n"
+        "  mode: KEYWORD\n"
+        '  queries: ["test"]\n'
+        "ai:\n"
+        "  provider: gemini\n"
+        "  prompt_template: x\n"
+        "storage: {}\n"
+        "dedup: {}\n"
+    )
+
+    result = CliRunner().invoke(
+        app, ["methodintel", "sync-aliases", "--config", str(config_path)]
+    )
+
+    assert result.exit_code == 2
+    assert "methods_repo_path is not set" in result.output

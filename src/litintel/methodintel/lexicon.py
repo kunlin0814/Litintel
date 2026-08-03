@@ -24,6 +24,17 @@ from typing import List
 from pydantic import BaseModel
 
 
+class LexiconError(ValueError):
+    """LEXICON.md is ambiguous about which concept a label belongs to.
+
+    Always raised, never resolved silently: a label under two different
+    concepts is an authoring collision the owner must adjudicate (which
+    concept is right is a judgment call, not something the parser can
+    guess), because a silent pick would route a paper's evidence to the
+    wrong concept and nothing would look broken.
+    """
+
+
 # Sections that look like concepts but are not. "Unplaced" holds terms that are
 # deliberately unattached (spec 3.4.2) -- an unplaced term must never become an
 # alias, or it would silently acquire the meaning it was parked for lacking.
@@ -33,6 +44,13 @@ _HEADING = re.compile(r"^##\s+(?P<name>.+?)\s*$")
 _QUESTION = re.compile(r"^Question:\s*(?P<text>.+?)\s*$")
 _TABLE_ROW = re.compile(r"^\|\s*(?P<first>[^|]+?)\s*\|")
 _TABLE_DIVIDER = re.compile(r"^\|[\s:-]+\|")
+
+# A line ending in one of these has finished the question it was stating --
+# continuation must stop there rather than keep absorbing whatever prose
+# happens to follow with no blank-line separator (a real risk: LEXICON.md is
+# hand-authored and a Question: line sits right above a table, but nothing
+# stops an editor leaving unrelated prose directly under it instead).
+_SENTENCE_END: tuple[str, ...] = (".", "?", "!")
 
 # First-column header cells to skip. Concept tables head with "Label"; the
 # Unplaced table heads with "Term" -- both are structure, not data.
@@ -85,6 +103,7 @@ def _parse(path: Path) -> "tuple[list[ConceptEntry], list[str]]":
             )
             if is_continuation:
                 current["question"] = current["question"] + " " + stripped
+                accumulating_question = not current["question"].endswith(_SENTENCE_END)
                 continue
             accumulating_question = False
             # Not a continuation line -- fall through and process it normally
@@ -93,8 +112,13 @@ def _parse(path: Path) -> "tuple[list[ConceptEntry], list[str]]":
         question = _QUESTION.match(line)
         if question:
             if current is not None:
-                current["question"] = question.group("text")
-                accumulating_question = True
+                text = question.group("text")
+                current["question"] = text
+                # A question ending in terminal punctuation is already
+                # complete -- do not keep absorbing lines under it. Only an
+                # unterminated wrap (spec: some questions wrap mid-sentence)
+                # continues onto the next line.
+                accumulating_question = not text.endswith(_SENTENCE_END)
             continue
 
         if _TABLE_DIVIDER.match(line):
@@ -141,11 +165,27 @@ def build_concept_aliases(entries: list[ConceptEntry]) -> dict[str, str]:
     it cannot silently resolve to a concept it was deliberately not assigned
     to (spec 3.4.2).
 
+    Raises LexiconError if the same label is claimed by two different
+    concepts: LEXICON.md exists to track a term drifting across papers, so a
+    label parked under two headings is a likely authoring mistake, not an
+    exotic one, and a silent overwrite would route evidence to whichever
+    concept happened to parse last. The same label repeated under the SAME
+    concept is a harmless duplicate and is deduped silently -- it carries no
+    ambiguity, since both occurrences already agree on the answer.
+
     Tier 2 -- semantic match against ConceptEntry.question -- is what catches a
     question phrased in words no label uses, and is out of scope for v1.
     """
-    return {
-        label.lower(): entry.concept
-        for entry in entries
-        for label in entry.labels
-    }
+    aliases: dict[str, str] = {}
+    for entry in entries:
+        for label in entry.labels:
+            key = label.lower()
+            claimed_by = aliases.get(key)
+            if claimed_by is not None and claimed_by != entry.concept:
+                raise LexiconError(
+                    "label %r is claimed by two concepts: %r and %r -- "
+                    "LEXICON.md must assign it to exactly one"
+                    % (label, claimed_by, entry.concept)
+                )
+            aliases[key] = entry.concept
+    return aliases
