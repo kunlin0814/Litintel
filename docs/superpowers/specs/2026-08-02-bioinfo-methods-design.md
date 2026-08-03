@@ -244,8 +244,52 @@ al., spatial-domain/SVG benchmark (Nucleic Acids Res 2025, PMID 40240000) are
 single-stage benchmarks -- excellent *within-stage* audit inputs per 3.4.1, not
 field maps. SpatialData and Sopa are infrastructure papers, not taxonomies.
 
-`# VERIFY: spatial ATAC / spatial epigenomics seed -- search in flight`
-`2026-08-02, no citation written into a chapter until confirmed.`
+Confirmed epigenomic and multiome seeds, verified 2026-08-02. Spatial ATAC is
+the thinnest case in the whole seed set and seeds at rung 3:
+
+- **Spatial ATAC, rung 3 -- Zhang D, Deng Y, Kukanja P, et al. *Spatial
+  epigenome-transcriptome co-profiling of mammalian tissues.* Nature 2023.**
+  PMID 36922587, doi:10.1038/s41586-023-05795-1, open access (PMC10076218).
+  Flagship method paper for spatial-ATAC-RNA-seq and spatial-CUT&Tag-RNA-seq.
+  Its computational stages are only four Methods subsections -- preprocessing,
+  clustering and visualization, integrative analysis and cell-type
+  identification, CSS/GAS-versus-expression correlation. Thin, and honestly so.
+- **scATAC, rung 2 -- Wang C, Zhou J, Zhang H, et al. *Computational Analyses
+  and Challenges of Single-cell ATAC-seq.* Genomics Proteomics Bioinformatics
+  2025.** PMID 41270791, doi:10.1093/gpbjnl/qzaf115, open access (PMC12753137).
+  The most exhaustively stage-enumerated paper in the entire seed set: QC,
+  alignment, peak calling, matrix construction, bias removal, dimensionality
+  reduction including iterative LSI, clustering, embedding, gene-activity
+  scoring, motif and footprinting, trajectory, plus dedicated multiomics-
+  integration and spatial-applications sections.
+- **Multiome, rung 2 -- Naqing F, Yuan Q, Duren Z. *Benchmarking component
+  choices for unpaired single cell RNA and epigenomic integration.* Genome Biol
+  2026.** PMID 41987329, doi:10.1186/s13059-026-04071-5, open access
+  (PMC13192178). Structured end to end around the integration pipeline: gene-
+  activity-score calculation, graph-based feature linking, dimension reduction,
+  clustering and label transfer. Published after Heumos et al., so it
+  supersedes that review's multiome sections rather than duplicating them.
+
+**Venue caveat, recorded rather than hidden.** Genomics Proteomics
+Bioinformatics and Genome Biology sit outside the flagship list of D1b rung 3.
+They are taken anyway because rung is about *what the field can support*, not
+about venue prestige: no Nature/Cell-family paper enumerates these stages at
+all, and a taxonomy is worthless if it is absent. The venue travels with the
+citation (section 4, `citation` is mandatory), so a PI evaluating a
+recommendation sees exactly where it came from and can discount it. Only the
+spatial-ATAC seed is in a flagship journal, and it is the *least* complete of
+the three.
+
+**The structural finding: spatial ATAC has almost no concepts of its own.**
+Its computational stages are inherited -- from scATAC (peak calling, iterative
+LSI, gene-activity scoring, motif enrichment) and from spatial transcriptomics
+(spatial domains, neighborhood analysis, registration) -- with very little that
+is unique to the intersection. This is an argument *for* concept-keyed chapters
+and against modality-keyed ones (D9): a `spatial_atac/` directory would be
+mostly empty while duplicating two other directories, whereas concept-keyed
+chapters let a spatial ATAC question land in `clustering.md` or
+`neighborhood_analysis.md` and pick up evidence recorded from any modality.
+A modality is a property of a record, not a chapter.
 
 Precedent already in this repo family: `skills/bioinfo-code/references/ArchR/`
 mirrors the ArchR manual's chapter structure. That is this move, applied one
@@ -479,6 +523,7 @@ than asserted.
 ---
 id: 2026-08-02-traag2019-louvain-connectivity
 concept: clustering      # null is legal and preferred over a guess (3.4.2)
+modality: ["scRNA"]      # scRNA | scATAC | multiome | spatial_rna | spatial_atac
 methods: ["Louvain", "Leiden"]
 kind: benchmark          # benchmark | usage | deprecation | best_practice | personal | seed
 recorded: 2026-08-02
@@ -749,16 +794,14 @@ Explicitly deferred until a real chapter proves the need:
 
 ## 9. Open questions
 
-1. **Concept taxonomy -- partially resolved 2026-08-02.** *Method* settled at
-   D1 / 3.4; *rung selection* settled at D1b. The single-cell source is now
-   confirmed against PubMed: Luecken & Theis 2019 (PMID 31217225) and Heumos et
-   al. 2023 (PMID 37002403), both rung 1, both open access.
-   Spatial transcriptomics is also confirmed, at rung 2 as predicted: OSTA
-   (PMID 41332620) for the taxonomy, Squidpy (PMID 35102346) for citable weight.
-   Still open: the spatial ATAC / spatial epigenomics seed.
-   `# VERIFY: spatial ATAC seed -- search in flight, nothing written until`
-   `confirmed.` `docs/methodintel_plan.md:480` supplies five candidate stages,
-   which is a starting overlap to diff against, not the list.
+1. ~~**Concept taxonomy.**~~ **CLOSED 2026-08-02.** *Method* settled at D1 /
+   3.4, *rung selection* at D1b, and all five modality seeds are now confirmed
+   against PubMed with full text retrieved (section 3.4): scRNA rung 1
+   (PMID 31217225, 37002403), scATAC rung 2 (PMID 41270791), multiome rung 2
+   (PMID 41987329), spatial RNA rung 2 (PMID 41332620 + 35102346), spatial ATAC
+   rung 3 (PMID 36922587). `docs/methodintel_plan.md:480` supplies five
+   candidate stages, which is a starting overlap to diff against, not the list.
+   Nothing blocks the implementation plan.
 2. **Coverage-audit cadence.** 3.4.1 proposes running the between-stage diff on
    major review publication (~12-18 months). Whether that is manual, or a
    `staleness_check` invocation, is undecided.
