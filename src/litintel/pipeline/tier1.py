@@ -473,28 +473,38 @@ class UsageFeedStats:
 
     Silent zero-yield is the failure this design exists to prevent: a paper
     contributing nothing to the knowledge base, with nobody told. These
-    counters make both ways that happens visible -- `papers_no_comp_methods`
-    (an empty/missing Pass 2 extraction) and `unresolved_names` (an
+    counters make every way that happens visible -- `papers_no_comp_methods`
+    (an empty/missing Pass 2 extraction), `unresolved_names` (an
     analysis_name that CONCEPT_ALIASES does not recognize, which is also the
-    exact raw material for the next LEXICON.md alias pass). `log_summary()` is
-    the one place a person reads these back after a run.
+    exact raw material for the next LEXICON.md alias pass), and
+    `skipped_existing` (a resolved analysis whose record already existed --
+    Layer 1's append-only collision-skip, which used to be the one outcome
+    with no counter and no log line). `log_summary()` is the one place a
+    person reads all of these back after a run; every analysis block counted
+    in `analyses_seen` lands in exactly one of: newly written
+    (`analyses_resolved - skipped_existing`), already present
+    (`skipped_existing`), or unresolved (`unresolved_names`).
     """
     papers_eligible: int = 0
     papers_no_comp_methods: int = 0
     analyses_seen: int = 0
     analyses_resolved: int = 0
+    skipped_existing: int = 0
     unresolved_names: List[str] = field(default_factory=list)
 
     def log_summary(self) -> None:
         unresolved = sorted(set(self.unresolved_names))
+        written = self.analyses_resolved - self.skipped_existing
         logger.info(
             "methods feed: %d paper(s) eligible, %d with no comp_methods, "
-            "%d analysis block(s) seen, %d resolved to a concept, "
-            "%d unresolved analysis name(s)%s",
+            "%d analysis block(s) seen, %d resolved (%d written, %d already "
+            "present), %d unresolved analysis name(s)%s",
             self.papers_eligible,
             self.papers_no_comp_methods,
             self.analyses_seen,
             self.analyses_resolved,
+            written,
+            self.skipped_existing,
             len(unresolved),
             (": %s" % unresolved) if unresolved else "",
         )
@@ -508,9 +518,11 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
     resolvable analysis rather than picking a single winner.
 
     Every analysis block is counted into `stats` whether or not it resolves,
-    and a paper with no comp_methods block is counted too (`stats`), so the
-    two silent-zero-yield paths (unresolved analysis name; empty/missing
-    comp_methods) are visible in `UsageFeedStats.log_summary()` rather than
+    a paper with no comp_methods block is counted too (`stats`), and a
+    collision skip (record already exists from an earlier run today) is
+    counted and logged by name -- so all three silent-zero-yield paths
+    (unresolved analysis name; empty/missing comp_methods; a same-day
+    collision skip) are visible in `UsageFeedStats.log_summary()` rather than
     disappearing as a bare skip.
 
     Never raises into the pipeline run: an unwritable knowledge base must not
@@ -522,7 +534,7 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
         IMPLEMENTATION_ALIASES,
         METHOD_ALIASES,
     )
-    from litintel.methodintel.writer import write_usage_record
+    from litintel.methodintel.writer import usage_record_path, write_usage_record
 
     stats.papers_eligible += 1
 
@@ -575,6 +587,20 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
             {v for k, v in IMPLEMENTATION_ALIASES.items() if k in text}
         )
 
+        pmid = str(rec["PMID"])
+        recorded = date.today()
+        expected_path = usage_record_path(methods_root, concept, pmid, recorded)
+        if expected_path.exists():
+            # The append-only collision skip (spec D4) is correct behavior,
+            # not a bug -- but it must not be the one outcome with no log
+            # line and no counter, so it is named and counted here.
+            stats.skipped_existing += 1
+            logger.info(
+                "methods feed: skipping write, record already exists: %s",
+                expected_path,
+            )
+            continue
+
         try:
             write_usage_record(
                 methods_root,
@@ -582,11 +608,11 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
                 methods=methods,
                 implementations=implementations,
                 modality=modality,
-                pmid=str(rec["PMID"]),
+                pmid=pmid,
                 citation=citation,
                 body=(comp.get("summary_2to3_sentences") or "").strip()
                      or "Methods extracted by Pass 2.",
-                recorded=date.today(),
+                recorded=recorded,
             )
         except OSError as exc:
             logger.warning("methods feed: could not write record: %s", exc)

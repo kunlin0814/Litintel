@@ -177,6 +177,85 @@ def test_log_summary_reports_resolved_and_unresolved_counts(caplog):
 
 
 # ---------------------------------------------------------------------------
+# Fix round 1: the collision skip must not be the one silent outcome.
+# ---------------------------------------------------------------------------
+
+def test_collision_skip_is_counted_and_logged_by_name(tmp_path, caplog):
+    """A same-day rerun on the same (paper, concept) is a correct no-op, but
+    it must be COUNTED (skipped_existing) and LOGGED (naming the existing
+    record id), same as the other two silent-zero-yield outcomes."""
+    rec = _rec()
+    _emit_usage_records(tmp_path, rec, UsageFeedStats())  # first write
+
+    stats2 = UsageFeedStats()
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        _emit_usage_records(tmp_path, rec, stats2)  # same day, same pmid, same concept
+
+    assert stats2.skipped_existing == 1
+    assert stats2.analyses_resolved == 1
+    assert stats2.analyses_seen == 1
+
+    skip_logs = [r.message for r in caplog.records if "skipping write" in r.message]
+    assert len(skip_logs) == 1
+    assert "already exists" in skip_logs[0]
+    assert "-clustering-usage.md" in skip_logs[0]  # names the record id
+
+
+def test_log_summary_surfaces_skipped_existing(caplog):
+    stats = UsageFeedStats(
+        papers_eligible=1,
+        analyses_seen=1,
+        analyses_resolved=1,
+        skipped_existing=1,
+    )
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        stats.log_summary()
+
+    [msg] = [r.message for r in caplog.records if "methods feed" in r.message]
+    assert "already present" in msg
+    assert "0 written" in msg
+    assert "1 already present" in msg
+
+
+def test_four_outcomes_reconcile_against_analyses_seen(tmp_path):
+    """One summary line must let a reader account for every analysis block
+    seen: written, already-present, or unresolved (papers_no_comp_methods is
+    a separate, paper-level axis with zero analysis blocks by construction)."""
+    stats = UsageFeedStats()
+
+    # Paper 1: two resolvable concepts, both fresh writes.
+    _emit_usage_records(tmp_path, _rec(comp_methods={
+        "summary_2to3_sentences": "x",
+        "analyses": [
+            {"analysis_name": "clustering", "steps": [{"step": "Leiden", "tool": "ArchR"}]},
+            {"analysis_name": "normalization", "steps": [{"step": "DESeq2 normalization", "tool": ""}]},
+        ],
+    }), stats)
+
+    # Paper 2 (same day): re-derives the same clustering claim (collision
+    # skip) plus one brand-new unresolved analysis name.
+    _emit_usage_records(tmp_path, _rec(PMID="41234567", comp_methods={
+        "summary_2to3_sentences": "x",
+        "analyses": [
+            {"analysis_name": "clustering", "steps": [{"step": "Leiden", "tool": "ArchR"}]},
+            {"analysis_name": "a totally new stage", "steps": []},
+        ],
+    }), stats)
+
+    # Paper 3: no comp_methods at all (paper-level, contributes 0 analyses).
+    _emit_usage_records(tmp_path, _rec(PMID="99999999", comp_methods=None), stats)
+
+    written = stats.analyses_resolved - stats.skipped_existing
+    assert stats.analyses_seen == written + stats.skipped_existing + len(stats.unresolved_names)
+    assert written == 2          # paper 1's clustering + normalization
+    assert stats.skipped_existing == 1  # paper 2's repeat clustering claim
+    assert len(stats.unresolved_names) == 1
+    assert stats.papers_no_comp_methods == 1
+    assert stats.papers_eligible == 3
+
+
+# ---------------------------------------------------------------------------
 # Idempotency / append-only at the fan-out layer (rerun same paper same day)
 # ---------------------------------------------------------------------------
 
@@ -200,3 +279,4 @@ def test_rerun_on_the_same_paper_does_not_duplicate_or_overwrite(tmp_path):
     files = list((tmp_path / "references" / "clustering").glob("*.md"))
     assert len(files) == 1
     assert files[0].read_text() == original_text
+    assert stats2.skipped_existing == 1

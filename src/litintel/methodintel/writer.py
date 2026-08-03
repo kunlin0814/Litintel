@@ -17,6 +17,19 @@ import yaml
 from litintel.methodintel.records import Citation
 
 
+def usage_record_path(methods_root: Path, concept: str, pmid: str, recorded: date) -> Path:
+    """Compute the path write_usage_record would use, without touching disk.
+
+    Exposed (not underscored) so a caller can tell, before calling
+    write_usage_record, whether a given call will be a fresh write or a
+    collision skip -- the tier1 usage feed uses this to count and log the
+    skip outcome without duplicating the id-format string in two files.
+    """
+    root = Path(os.path.expanduser(str(methods_root)))
+    record_id = "%s-pmid%s-%s-usage" % (recorded.isoformat(), pmid, concept)
+    return root / "references" / concept / ("%s.md" % record_id)
+
+
 def write_usage_record(
     methods_root: Path,
     concept: str,
@@ -45,15 +58,12 @@ def write_usage_record(
         raise ValueError("concept is required; a usage record with no concept "
                          "cannot be filed into a shard")
 
-    root = Path(os.path.expanduser(str(methods_root)))
-    shard = root / "references" / concept
-    shard.mkdir(parents=True, exist_ok=True)
-
-    record_id = "%s-pmid%s-%s-usage" % (recorded.isoformat(), pmid, concept)
-    path = shard / ("%s.md" % record_id)
+    path = usage_record_path(methods_root, concept, pmid, recorded)
+    path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return path
 
+    record_id = path.stem
     frontmatter = {
         "id": record_id,
         "concept": concept,
