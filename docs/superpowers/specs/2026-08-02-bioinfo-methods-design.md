@@ -206,8 +206,46 @@ applied to seeds instead of methods. Rung 3 is the *expected* case for spatial
 and it is not a defect -- the design records what the field supports, and
 "no consensus yet" is itself a durable fact worth recording.
 
-`# VERIFY: spatial transcriptomics and spatial ATAC seed papers -- searches in`
-`flight 2026-08-02, no citation written into a chapter until confirmed.`
+Confirmed spatial transcriptomics seeds, verified 2026-08-02. **No consensus
+best-practice review exists** in a Nature/Cell-family journal, so this modality
+seeds at rung 2, exactly as D1b anticipated:
+
+- **Taxonomy seed -- Crowell HL et al. *Orchestrating Spatial Transcriptomics
+  Analysis with Bioconductor* (OSTA).** bioRxiv preprint 2025, PMID 41332620,
+  doi:10.1101/2025.11.20.688607, open access (PMC12667768). Book at
+  `bioconductor.org/books/release/OSTA/`. The direct spatial analog of OSCA,
+  and by a wide margin the most complete stage enumeration found: sequencing-
+  based and imaging-based platform tracks, then platform-independent analyses
+  (normalization, dimensionality reduction, clustering and annotation, feature
+  selection and testing, spatial statistics, image analysis, deep learning),
+  multi-sample analyses (differential spatial patterns, differential
+  colocalization), and cross-platform analyses (registration, imputation).
+- **Citable anchor -- Palla G et al. *Squidpy: a scalable framework for spatial
+  omics analysis.* Nat Methods 2022;19(2):171-178.** PMID 35102346,
+  doi:10.1038/s41592-021-01358-2, open access (PMC8828470). Stage-structured
+  Methods section: spatial graph -> neighborhood enrichment, Ripley's
+  statistics, co-occurrence, spatial autocorrelation -> ligand-receptor
+  analysis -> image processing, segmentation, feature extraction.
+
+**These two play different roles and both are needed.** OSTA is source class 2
+in the table above -- a tutorial table of contents, not a review -- which is why
+it out-enumerates every actual review while carrying weaker authority as an
+unreviewed preprint reflecting one ecosystem's view. Squidpy is peer-reviewed
+in a journal a PI will recognize but enumerates only the stages its own package
+implements. Taking the taxonomy from OSTA and the citation weight from Squidpy
+is the method/implementation split of section 5.2, applied to seeds.
+
+Rejected after checking, recorded so the next audit does not re-litigate them:
+Moses & Pachter, *Museum of spatial transcriptomics* (Nat Methods 2022, PMID
+35273392) -- high-impact and historically valuable, but its analysis section has
+only two headings, "Upstream" and "Downstream", with stages buried in prose.
+Li et al., deconvolution benchmark (Nat Commun 2023, PMID 36941264) and Kang et
+al., spatial-domain/SVG benchmark (Nucleic Acids Res 2025, PMID 40240000) are
+single-stage benchmarks -- excellent *within-stage* audit inputs per 3.4.1, not
+field maps. SpatialData and Sopa are infrastructure papers, not taxonomies.
+
+`# VERIFY: spatial ATAC / spatial epigenomics seed -- search in flight`
+`2026-08-02, no citation written into a chapter until confirmed.`
 
 Precedent already in this repo family: `skills/bioinfo-code/references/ArchR/`
 mirrors the ArchR manual's chapter structure. That is this move, applied one
@@ -715,9 +753,10 @@ Explicitly deferred until a real chapter proves the need:
    D1 / 3.4; *rung selection* settled at D1b. The single-cell source is now
    confirmed against PubMed: Luecken & Theis 2019 (PMID 31217225) and Heumos et
    al. 2023 (PMID 37002403), both rung 1, both open access.
-   Still open: the spatial transcriptomics and spatial ATAC seeds, expected at
-   rung 2 or 3 rather than rung 1.
-   `# VERIFY: spatial seeds -- searches in flight, nothing written until`
+   Spatial transcriptomics is also confirmed, at rung 2 as predicted: OSTA
+   (PMID 41332620) for the taxonomy, Squidpy (PMID 35102346) for citable weight.
+   Still open: the spatial ATAC / spatial epigenomics seed.
+   `# VERIFY: spatial ATAC seed -- search in flight, nothing written until`
    `confirmed.` `docs/methodintel_plan.md:480` supplies five candidate stages,
    which is a starting overlap to diff against, not the list.
 2. **Coverage-audit cadence.** 3.4.1 proposes running the between-stage diff on
