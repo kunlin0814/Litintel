@@ -144,6 +144,56 @@ def methodintel_sync_aliases(config: str = "configs/tier1_pca.yaml"):
     for term in sorted(unplaced):
         typer.echo("#   %s" % term)
 
+
+@methodintel_app.command("chapter")
+def methodintel_chapter(
+    concept: str,
+    config: str = "configs/tier1_pca.yaml",
+    write: bool = typer.Option(False, help="Write chapters/<concept>.md instead of printing"),
+):
+    """Regenerate one chapter from its reference records.
+
+    Writes into methods_repo_path but never commits -- the human reviews and
+    commits in dotfiles, which is the D6 review gate.
+    """
+    from litintel.methodintel.lexicon import parse_lexicon
+    from litintel.methodintel.records import RecordError, resolve_methods_root
+    from litintel.methodintel.synthesis import generate_chapter
+
+    cfg = load_config_from_yaml(config)
+    try:
+        root = resolve_methods_root(cfg.methods_repo_path)
+    except RecordError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    # LEXICON.md is the authored concept registry (spec D9): concepts are
+    # declared there independent of whether references/<concept>/ has been
+    # populated yet, so this is what tells a typo'd concept apart from a
+    # known-but-not-yet-evidenced one (records.py::load_concept_records
+    # returns [] for both, which is the ambiguity this check exists to break).
+    known_concepts = sorted(entry.concept for entry in parse_lexicon(root / "LEXICON.md"))
+    if concept not in known_concepts:
+        typer.secho(
+            "unknown concept %r -- known concepts are: %s"
+            % (concept, ", ".join(known_concepts)),
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+
+    text = generate_chapter(root, concept, cfg.ai.pass2_model, cfg.ai.pass2_thinking)
+
+    if not write:
+        typer.echo(text)
+        return
+
+    target = root / "chapters" / ("%s.md" % concept)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+    typer.secho("wrote %s" % target, fg=typer.colors.GREEN)
+    typer.echo("Review and commit in dotfiles -- this command does not commit.")
+
+
 app.add_typer(methodintel_app, name="methodintel")
 
 
