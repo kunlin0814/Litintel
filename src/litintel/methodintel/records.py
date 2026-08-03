@@ -165,15 +165,33 @@ def load_concept_records(methods_root: Path, concept: str) -> list[ReferenceReco
     may have no canonical label, and by the same logic no records, yet). This
     is distinct from an invalid knowledge root, which is caught loudly by
     resolve_methods_root() before a path ever reaches here.
+
+    A record whose `concept` field DISAGREES with the shard it sits in is a
+    misfile, and it RAISES. Skipping it with a log was the alternative and
+    is worse: the chapter would then render without that evidence and look
+    complete, which is the silent-omission failure this whole design exists
+    to prevent -- and a chapter is Layer 2, regenerated on command (spec
+    D5), so failing loud costs one fix plus one re-run, while a silent skip
+    costs a wrong answer nobody can see. `concept: null` is NOT a misfile:
+    Layer 1 explicitly allows an untriaged record (spec 3.4.2), and the
+    _seeds shard is made of them.
     """
     shard = Path(methods_root) / "references" / concept
     if not shard.is_dir():
         return []
 
-    return sorted(
-        (parse_record(p) for p in shard.glob("*.md")),
-        key=lambda r: r.id,
-    )
+    records = []
+    for path in sorted(shard.glob("*.md")):
+        record = parse_record(path)
+        if record.concept is not None and record.concept != concept:
+            raise RecordError(
+                "%s: record declares concept %r but is filed in the %r shard; "
+                "it would render in the wrong chapter"
+                % (path, record.concept, concept)
+            )
+        records.append(record)
+
+    return sorted(records, key=lambda r: r.id)
 
 
 def resolve_methods_root(configured_path: Optional[str]) -> Path:

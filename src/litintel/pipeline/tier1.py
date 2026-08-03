@@ -486,13 +486,22 @@ class UsageFeedStats:
     person reads all of these back after a run; every analysis block counted
     in `analyses_seen` lands in exactly one of: newly written
     (`analyses_resolved - skipped_existing`), already present
-    (`skipped_existing`), or unresolved (`unresolved_names`).
+    (`skipped_existing`), unresolved (`unresolved_names`), or failed to write
+    (`write_failures`).
+
+    Counters are in units of ANALYSIS BLOCKS, not files: several blocks of one
+    paper can resolve to one concept and merge into a single record, and the
+    identity has to close against `analyses_seen`, which counts blocks.
     """
     papers_eligible: int = 0
     papers_no_comp_methods: int = 0
     analyses_seen: int = 0
     analyses_resolved: int = 0
     skipped_existing: int = 0
+    # Blocks whose record could not be written (OSError). Without a counter,
+    # a failed write left the summary's arithmetic short by exactly the blocks
+    # it lost, which reads like a dropped block rather than a disk problem.
+    write_failures: int = 0
     unresolved_names: List[str] = field(default_factory=list)
 
     def log_summary(self) -> None:
@@ -510,7 +519,8 @@ class UsageFeedStats:
         logger.info(
             "methods feed: %d paper(s) eligible, %d with no comp_methods, "
             "%d analysis block(s) seen, %d resolved (%d written, %d already "
-            "present), %d unresolved block(s) across %d distinct name(s)%s",
+            "present), %d unresolved block(s) across %d distinct name(s)%s, "
+            "%d write failure(s)",
             self.papers_eligible,
             self.papers_no_comp_methods,
             self.analyses_seen,
@@ -520,6 +530,7 @@ class UsageFeedStats:
             len(self.unresolved_names),
             len(unresolved),
             (": %s" % unresolved) if unresolved else "",
+            self.write_failures,
         )
 
 
@@ -564,6 +575,7 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
     Never raises into the pipeline run: an unwritable knowledge base must not
     fail a literature run whose real outputs are Notion and Drive.
     """
+    from litintel.methodintel.modality import map_data_types
     from litintel.methodintel.records import Citation
     from litintel.methodintel.router import (
         CONCEPT_ALIASES,
@@ -592,10 +604,14 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
         journal=rec.get("Journal") or "unknown",
         year=int(year_raw) if year_raw.isdigit() else 0,
     )
-    # DataTypes is a comma-separated controlled vocabulary (see
-    # enrich/prompt_templates.py: "### DataTypes ... Comma-separated list"),
-    # not semicolon-separated -- verified against the real prompt spec.
-    modality = [d.strip() for d in (rec.get("DataTypes") or "").split(",") if d.strip()]
+    # `DataTypes` is an ASSAY vocabulary ("snRNA-seq, Visium, H&E"); a record's
+    # `modality` is the ANALYSIS axis chapters are organized by (scRNA /
+    # scATAC / spatial_rna / spatial_atac / multiome). Copying one into the
+    # other made a chapter render "### H&E ... not audited" for a stain. The
+    # mapping and the comma split both live in methodintel/modality.py so the
+    # writer and the renderer share one definition; an assay with no honest
+    # analysis modality contributes nothing, and [] is the correct answer.
+    modality = map_data_types(rec.get("DataTypes") or "")
     # `tags` is CompMethods-level (one list per paper, shared across all of
     # its analysis blocks), not per-block -- same granularity `body` already
     # uses below. Unlike `analysis_name`, the Pass 2 prompt gates `tags` to a
@@ -671,26 +687,55 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
                 raw_name, tags, rec.get("PMID"),
             )
 
+    # MERGE BEFORE WRITING. Two blocks in ONE run can legitimately resolve to
+    # the same concept -- "clustering" and "community detection" are both
+    # CONCEPT_ALIASES keys for `clustering`. The record id is
+    # (date, pmid, concept), so the second block hit the append-only collision
+    # skip and was reported as an idempotent "record already exists" rerun,
+    # silently dropping real evidence. Merging the methods and implementations
+    # of same-concept blocks and writing once per concept keeps both blocks'
+    # evidence and leaves the CROSS-run collision skip (the correct, tested
+    # behavior) untouched: it still fires, on a file written by an earlier run.
+    merged: Dict[str, Dict[str, Any]] = {}
     for block, concept in resolved:
-        stats.analyses_resolved += 1
-
         steps = block.get("steps") or []
         text = " ".join(
             "%s %s" % (s.get("step", ""), s.get("tool", "")) for s in steps
         ).lower()
-        methods = sorted({v for k, v in METHOD_ALIASES.items() if k in text})
-        implementations = sorted(
-            {v for k, v in IMPLEMENTATION_ALIASES.items() if k in text}
+        entry = merged.setdefault(
+            concept, {"blocks": 0, "methods": set(), "implementations": set()}
+        )
+        entry["blocks"] += 1
+        entry["methods"].update(v for k, v in METHOD_ALIASES.items() if k in text)
+        entry["implementations"].update(
+            v for k, v in IMPLEMENTATION_ALIASES.items() if k in text
         )
 
-        pmid = str(rec["PMID"])
-        recorded = date.today()
+    pmid = str(rec["PMID"])
+    recorded = date.today()
+
+    for concept in sorted(merged):
+        entry = merged[concept]
+        # Counters stay in units of ANALYSIS BLOCKS, not files, so
+        # log_summary's identity still closes against `analyses_seen`. A
+        # merged pair reads "2 written" against one file, which is true at
+        # block granularity: both blocks' evidence went into that record.
+        blocks = entry["blocks"]
+        if blocks > 1:
+            logger.info(
+                "methods feed: %d analysis block(s) resolved to concept %r for "
+                "pmid %s; merged into one record rather than counted as a "
+                "collision skip",
+                blocks, concept, pmid,
+            )
+
         expected_path = usage_record_path(methods_root, concept, pmid, recorded)
         if expected_path.exists():
             # The append-only collision skip (spec D4) is correct behavior,
             # not a bug -- but it must not be the one outcome with no log
             # line and no counter, so it is named and counted here.
-            stats.skipped_existing += 1
+            stats.analyses_resolved += blocks
+            stats.skipped_existing += blocks
             logger.info(
                 "methods feed: skipping write, record already exists: %s",
                 expected_path,
@@ -701,8 +746,8 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
             write_usage_record(
                 methods_root,
                 concept=concept,
-                methods=methods,
-                implementations=implementations,
+                methods=sorted(entry["methods"]),
+                implementations=sorted(entry["implementations"]),
                 modality=modality,
                 pmid=pmid,
                 citation=citation,
@@ -711,4 +756,15 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
                 recorded=recorded,
             )
         except OSError as exc:
+            # Counted, not just warned: a failed write is a fourth block-level
+            # outcome, and leaving it uncounted would break the reconciliation
+            # identity (blocks seen == written + already present + unresolved
+            # + write failures) that makes the summary auditable.
+            stats.write_failures += blocks
             logger.warning("methods feed: could not write record: %s", exc)
+            continue
+
+        # Counted only AFTER the write returns. Incrementing first left the
+        # run summary claiming a record that the OSError branch above had just
+        # failed to create.
+        stats.analyses_resolved += blocks

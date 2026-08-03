@@ -258,3 +258,38 @@ def test_seed_rung_quoted_string_is_rejected(tmp_path):
     )
     with pytest.raises(RecordError, match="valid integer"):
         parse_record(_write(tmp_path, "r.md", text))
+
+
+# ---------------------------------------------------------------------------
+# A misfiled record must be loud, never rendered into the wrong chapter.
+# ---------------------------------------------------------------------------
+
+def test_load_concept_records_raises_on_a_record_filed_in_the_wrong_shard(tmp_path):
+    """The shard was globbed without ever checking `record.concept`, so a
+    record declaring one concept and sitting in another's directory rendered
+    in the wrong chapter. Raising is chosen over skip-with-log: a skipped
+    record leaves a chapter that looks complete but is missing evidence --
+    the silent-omission failure this design exists to prevent -- while a
+    raise costs one fix and one regeneration, chapters being Layer 2."""
+    shard = tmp_path / "references" / "clustering"
+    shard.mkdir(parents=True)
+    (shard / "misfiled.md").write_text(VALID.replace("concept: clustering", "concept: normalization"))
+
+    with pytest.raises(RecordError) as excinfo:
+        load_concept_records(tmp_path, "clustering")
+
+    assert "normalization" in str(excinfo.value)
+    assert "clustering" in str(excinfo.value)
+
+
+def test_load_concept_records_accepts_an_untriaged_null_concept(tmp_path):
+    """`concept: null` is an explicitly legal state (spec 3.4.2) and the
+    whole _seeds shard is made of them -- it is untriaged, not misfiled."""
+    shard = tmp_path / "references" / "clustering"
+    shard.mkdir(parents=True)
+    (shard / "untriaged.md").write_text(VALID.replace("concept: clustering", "concept: null"))
+
+    records = load_concept_records(tmp_path, "clustering")
+
+    assert len(records) == 1
+    assert records[0].concept is None

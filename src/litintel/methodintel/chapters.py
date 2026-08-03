@@ -8,6 +8,9 @@ as the `prose` dict, produced by synthesis.py (Task 8).
 
 from __future__ import annotations
 
+from datetime import date
+
+from litintel.methodintel.modality import check_analysis_modalities
 from litintel.methodintel.records import ReferenceRecord
 
 
@@ -84,16 +87,23 @@ def render_status_table(records: list[ReferenceRecord]) -> str:
     would be near-duplicates (spec 3.4.4). Method and implementation stay
     separate columns rather than one string -- one algorithm ships in several
     packages with different pipeline-fit consequences (spec 5.2).
+
+    "Last reviewed" is the NEWEST `recorded` date on the row, not the first
+    one encountered. `load_concept_records` returns ascending id order, and
+    ids are date-prefixed, so the first record seen is the OLDEST -- a
+    `setdefault` here reported a triple last reviewed in January when an
+    August record on the same triple existed. Currency is what this base
+    sells, and this is in its deterministic half.
     """
-    rows: dict[tuple[str, str, str], str] = {}
+    rows: dict[tuple[str, str, str], date] = {}
     for record in records:
         implementations = ", ".join(record.implementations) or "-"
         for method in record.methods:
             for modality in record.modality or ["unspecified"]:
-                rows.setdefault(
-                    (method, implementations, modality),
-                    record.recorded.isoformat(),
-                )
+                key = (method, implementations, modality)
+                previous = rows.get(key)
+                if previous is None or record.recorded > previous:
+                    rows[key] = record.recorded
 
     lines = [
         "## Status",
@@ -103,7 +113,8 @@ def render_status_table(records: list[ReferenceRecord]) -> str:
     ]
     for (method, implementations, modality), reviewed in sorted(rows.items()):
         lines.append(
-            "| %s | %s | %s | %s |" % (method, implementations, modality, reviewed)
+            "| %s | %s | %s | %s |"
+            % (method, implementations, modality, reviewed.isoformat())
         )
 
     return "\n".join(lines)
@@ -117,16 +128,29 @@ def render_borrowed_and_broken(records: list[ReferenceRecord]) -> str:
     includes the degenerate case of zero records at all -- a concept that has
     not been populated yet (e.g. `load_concept_records` returned []) is "no
     evidence recorded yet", not a finished, clean chapter.
+
+    Records with no modality at all are a THIRD state and get their own line:
+    once map_data_types started refusing to guess a modality from an assay
+    name, a paper whose only assay was H&E began producing a real record with
+    an empty modality list. Saying "no records for this concept yet" there
+    would be simply false.
     """
     lines = ["## Borrowed and broken", ""]
 
     modalities = sorted({m for r in records for m in r.modality})
     if not modalities:
-        lines.append(
-            "- No records for this concept yet. This concept is **not "
-            "audited** for any modality: it is an open question, not a "
-            "clean chapter."
-        )
+        if records:
+            lines.append(
+                "- %d record(s) for this concept, none of which names a "
+                "modality. This concept is **not audited** for any modality: "
+                "it is an open question, not a clean chapter." % len(records)
+            )
+        else:
+            lines.append(
+                "- No records for this concept yet. This concept is **not "
+                "audited** for any modality: it is an open question, not a "
+                "clean chapter."
+            )
         return "\n".join(lines).rstrip()
 
     adaptations: dict[str, list[ReferenceRecord]] = {m: [] for m in modalities}
@@ -186,21 +210,49 @@ def assemble_chapter(
     `records` should already be scoped to `concept` (e.g. via
     `load_concept_records`); this function does not filter by
     `record.concept` itself, since Layer 1 explicitly allows `concept: null`
-    for records not yet triaged (spec 3.4.2).
+    for records not yet triaged (spec 3.4.2). A record whose `concept` is set
+    and DISAGREES with the shard is rejected upstream, in
+    records.py::load_concept_records.
+
+    SECTION ORDER IS A CONTAINMENT DECISION, not a readability one. Every
+    deterministic section (Status, Borrowed and broken, What changed,
+    References) sits ABOVE every model-authored prose section (Current
+    recommendation, Tradeoffs, Open questions). Prose is inserted verbatim,
+    so any structural construct it opens propagates DOWNWARD through the
+    rest of the file: an unclosed fence or an unclosed CommonMark HTML block
+    (`<!--`, `<?`, `<!DOCTYPE`, `<![CDATA[`) swallows every heading below
+    it, and a blank line does not end the HTML kinds -- they run to end of
+    document. With prose at the top, one such construct suppressed 7 of 9
+    headings, deleting the deterministic half of the chapter. With prose
+    last, the blast radius of any prose defect is prose itself.
+    synthesis.py::validate_prose still rejects these constructs; this order
+    is what makes that check a second line of defence rather than the only
+    one (localize the damage before hardening the validator).
+
+    The cost is real and accepted: "Current recommendation", the section a
+    reader wants first, is no longer first. It buys two things -- a prose
+    defect can no longer delete the deterministic sections, and the
+    deterministic diff (which IS the changelog, spec D5) sits at the top of
+    the file instead of below regenerated prose churn.
     """
+    for record in records:
+        check_analysis_modalities("record %s" % record.id, record.modality)
+
     bibliography, _ = render_bibliography(records)
 
     return "\n\n".join([
         "# %s" % concept,
         "<!-- GENERATED from references/%s/. Do not hand-edit (spec D5). -->" % concept,
-        "## Current recommendation",
-        prose["recommendation"].strip(),
+        # Deterministic half -- assembled from records, never from the model.
         render_status_table(records),
         render_borrowed_and_broken(records),
-        "## Tradeoffs",
-        prose["tradeoffs"].strip(),
         render_what_changed(records),
         bibliography,
+        # Model-authored half -- everything below this line is prose.
+        "## Current recommendation",
+        prose["recommendation"].strip(),
+        "## Tradeoffs",
+        prose["tradeoffs"].strip(),
         "## Open questions",
         prose["open_questions"].strip(),
         "",

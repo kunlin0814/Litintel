@@ -580,7 +580,7 @@ def test_check_prose_is_cited_passes_when_every_sentence_has_a_marker():
         ),
         "tradeoffs": "Louvain is faster [id: b].",
         "open_questions": "Resolution selection is unresolved [id: a].",
-    })
+    }, {"a", "b"})
 
 
 def test_check_prose_is_cited_raises_on_the_historical_defect_shape():
@@ -594,7 +594,7 @@ def test_check_prose_is_cited_raises_on_the_historical_defect_shape():
             ),
             "tradeoffs": "Louvain is faster [id: b].",
             "open_questions": "Resolution selection is unresolved [id: a].",
-        })
+        }, {"a", "b"})
 
 
 def test_check_prose_is_cited_names_the_offending_section_and_sentence():
@@ -603,7 +603,7 @@ def test_check_prose_is_cited_names_the_offending_section_and_sentence():
             "recommendation": "Use Leiden [id: a].",
             "tradeoffs": "Louvain is a legacy choice.",
             "open_questions": "Resolution selection [id: a].",
-        })
+        }, {"a"})
 
     assert "tradeoffs" in str(excinfo.value)
     assert "Louvain is a legacy choice." in str(excinfo.value)
@@ -620,7 +620,7 @@ def test_check_prose_is_cited_allows_a_sentence_wrapped_across_two_lines():
         ),
         "tradeoffs": "x [id: a].",
         "open_questions": "y [id: a].",
-    })
+    }, {"a"})
 
 
 def test_check_prose_is_cited_skips_fenced_code_blocks():
@@ -630,7 +630,7 @@ def test_check_prose_is_cited_skips_fenced_code_blocks():
         "recommendation": "Use Leiden [id: a].",
         "tradeoffs": "Example:\n```\nsc.tl.leiden(adata)\nno marker here\n```\nSee above [id: a].",
         "open_questions": "x [id: a].",
-    })
+    }, {"a"})
 
 
 def test_synthesize_prose_rejects_an_uncited_sentence_end_to_end():
@@ -861,3 +861,192 @@ def test_chapter_cli_generates_a_chapter_for_a_known_but_empty_concept(tmp_path)
 
     assert result.exit_code == 0, result.output
     assert "not audited" in result.output
+
+
+# ---------------------------------------------------------------------------
+# CommonMark HTML BLOCK types 2-5: the sixth suppression door.
+# ---------------------------------------------------------------------------
+
+def _clean(**overrides):
+    """A payload that passes every other validate_prose rule, so a failure
+    can only come from the construct under test."""
+    payload = {
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Louvain is faster.",
+        "open_questions": "Resolution selection is unresolved.",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_unclosed_html_comment_is_rejected():
+    """The measured C1 defect: prose whose line begins '<!--' and never
+    closes was ACCEPTED, and unlike a fence a blank line does not end it --
+    it runs to end of document, leaving 2 of 9 headings standing in a real
+    assembled chapter."""
+    with pytest.raises(ValueError) as excinfo:
+        validate_prose(_clean(recommendation="Use Leiden.\n<!-- note to self"))
+
+    assert "recommendation" in str(excinfo.value)
+    assert "<!--" in str(excinfo.value)
+
+
+def test_unclosed_processing_instruction_is_rejected():
+    with pytest.raises(ValueError, match="HTML block"):
+        validate_prose(_clean(tradeoffs="Louvain is faster.\n<?php echo"))
+
+
+def test_unclosed_doctype_declaration_is_rejected():
+    with pytest.raises(ValueError, match="HTML block"):
+        validate_prose(_clean(open_questions="Unresolved.\n<!DOCTYPE html"))
+
+
+def test_unclosed_cdata_section_is_rejected():
+    with pytest.raises(ValueError, match="HTML block"):
+        validate_prose(_clean(recommendation="Use Leiden.\n<![CDATA[ raw"))
+
+
+def test_a_blank_line_does_not_close_an_html_block():
+    """The property that makes this class worse than an unclosed fence. If
+    the checker treated a blank line as an end condition, this would pass."""
+    with pytest.raises(ValueError, match="HTML block"):
+        validate_prose(_clean(recommendation="Use Leiden.\n<!-- open\n\nstill inside"))
+
+
+def test_a_closed_html_comment_on_one_line_is_legal():
+    """The check must reject unclosed openers, not HTML comments as such --
+    assemble_chapter itself emits a closed one-line comment."""
+    prose = validate_prose(_clean(recommendation="<!-- aside -->\nUse Leiden."))
+
+    assert "Use Leiden." in prose["recommendation"]
+
+
+def test_an_html_comment_closed_on_a_later_line_is_legal():
+    prose = validate_prose(_clean(
+        recommendation="<!-- aside\nspanning two lines -->\nUse Leiden."
+    ))
+
+    assert "Use Leiden." in prose["recommendation"]
+
+
+def test_an_unclosed_html_opener_inside_a_fence_is_not_an_html_block():
+    """Inside a fenced code block nothing is markup, so an unclosed '<!--'
+    in a code example must stay legal prose -- over-rejecting normal content
+    is worse than the bypass, since it fires on correct output."""
+    prose = validate_prose(_clean(
+        tradeoffs="Example:\n```\n<!-- unclosed in a code sample\n```\nDone."
+    ))
+
+    assert "Done." in prose["tradeoffs"]
+
+
+def test_a_dash_line_after_an_html_block_is_not_a_setext_heading():
+    """An HTML block's lines are not paragraph text, so a following rule is
+    a thematic break. This also pins that `text_above` stays a str: it is
+    interpolated with %r into the setext error message."""
+    prose = validate_prose(_clean(recommendation="<!-- aside -->\n---\nUse Leiden."))
+
+    assert "Use Leiden." in prose["recommendation"]
+
+
+def test_setext_error_names_the_text_it_would_underline():
+    with pytest.raises(ValueError) as excinfo:
+        validate_prose(_clean(recommendation="Status\n===\nUse Leiden."))
+
+    assert "'Status'" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Citation markers must name a record that exists, not merely be present.
+# ---------------------------------------------------------------------------
+
+def test_check_prose_is_cited_rejects_a_fabricated_record_id():
+    """Presence is not traceability. A marker naming a record that was never
+    supplied reads exactly like a real citation to a human and to the skill
+    that consumes these chapters."""
+    with pytest.raises(ValueError) as excinfo:
+        _check_prose_is_cited(
+            {"recommendation": "Use Leiden [id: 2026-08-02-totally-made-up]."},
+            {"2026-08-02-traag2019-louvain-connectivity"},
+        )
+
+    assert "2026-08-02-totally-made-up" in str(excinfo.value)
+    assert "recommendation" in str(excinfo.value)
+
+
+def test_check_prose_is_cited_rejects_an_empty_marker():
+    with pytest.raises(ValueError, match="empty citation marker"):
+        _check_prose_is_cited({"tradeoffs": "Louvain is faster [id: ]."}, {"a"})
+
+
+def test_check_prose_is_cited_accepts_ids_that_were_actually_supplied():
+    _check_prose_is_cited(
+        {"recommendation": "Use Leiden [id: a]. It is connected [id: b]."},
+        {"a", "b"},
+    )
+
+
+def test_synthesize_prose_rejects_a_fabricated_id_end_to_end():
+    """The ids are available at the call site, so the check must actually be
+    wired to them rather than to a permissive default."""
+    from unittest.mock import patch
+
+    record = _record("2026-08-02-real-record")
+    fake_payload = {
+        "recommendation": "Use Leiden [id: 2026-08-02-does-not-exist].",
+        "tradeoffs": "Louvain is faster [id: 2026-08-02-real-record].",
+        "open_questions": "Unresolved [id: 2026-08-02-real-record].",
+    }
+
+    with patch("litintel.enrich.ai_client._get_gemini_client", return_value=object()), \
+         patch("litintel.enrich.ai_client._call_gemini", return_value=(fake_payload, {})):
+        with pytest.raises(ValueError) as excinfo:
+            synthesize_prose("clustering", [record], "model-x", "high")
+
+    assert "2026-08-02-does-not-exist" in str(excinfo.value)
+
+
+def test_check_prose_is_cited_accepts_a_marker_carrying_several_ids():
+    """'[id: a, b]' is what the model actually writes when a claim rests on
+    two records (seen on the first live regeneration after this check went
+    in), and it is the honest citation for such a claim."""
+    _check_prose_is_cited(
+        {"recommendation": "Leiden beats Louvain [id: a, b]."},
+        {"a", "b"},
+    )
+
+
+def test_check_prose_is_cited_catches_a_fabricated_id_inside_a_multi_id_marker():
+    """The permissive FORM must not become a permissive CHECK: every id in
+    the list is validated, so a fabricated one cannot hide behind a real one."""
+    with pytest.raises(ValueError) as excinfo:
+        _check_prose_is_cited(
+            {"recommendation": "Leiden beats Louvain [id: a, 2026-08-02-invented]."},
+            {"a", "b"},
+        )
+
+    assert "2026-08-02-invented" in str(excinfo.value)
+
+
+def test_check_prose_is_cited_rejects_a_trailing_empty_id_in_a_list():
+    with pytest.raises(ValueError, match="empty id"):
+        _check_prose_is_cited({"recommendation": "Use Leiden [id: a, ]."}, {"a"})
+
+
+def test_check_prose_is_cited_accepts_a_repeated_id_label_in_a_multi_id_marker():
+    """'[id: a, id: b]' is the other multi-id form the model emits live. The
+    repeated label is punctuation, not part of the id."""
+    _check_prose_is_cited(
+        {"recommendation": "Leiden beats Louvain [id: a, id: b]."},
+        {"a", "b"},
+    )
+
+
+def test_a_repeated_id_label_does_not_hide_a_fabricated_id():
+    with pytest.raises(ValueError) as excinfo:
+        _check_prose_is_cited(
+            {"recommendation": "Leiden beats Louvain [id: a, id: 2026-08-02-invented]."},
+            {"a", "b"},
+        )
+
+    assert "2026-08-02-invented" in str(excinfo.value)

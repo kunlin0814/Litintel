@@ -14,6 +14,7 @@ from typing import List, Optional
 
 import yaml
 
+from litintel.methodintel.modality import check_analysis_modalities
 from litintel.methodintel.records import Citation
 
 
@@ -57,6 +58,13 @@ def write_usage_record(
     if not concept:
         raise ValueError("concept is required; a usage record with no concept "
                          "cannot be filed into a shard")
+
+    # The gate on what enters append-only layer 1. `modality` is the ANALYSIS
+    # axis chapters are organized by, not an assay name -- writing an assay
+    # here made a chapter render "### H&E ... not audited". Append-only means
+    # a wrong value cannot be withdrawn by code, so it is refused at the door
+    # rather than cleaned up later (modality.py).
+    check_analysis_modalities("usage record for pmid %s" % pmid, modality)
 
     path = usage_record_path(methods_root, concept, pmid, recorded)
     path.parent.mkdir(parents=True, exist_ok=True)

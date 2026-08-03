@@ -60,6 +60,29 @@ _SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
 _FENCE_OPEN = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})")
 _FENCE_CLOSE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})[ \t]*$")
 
+# CommonMark HTML BLOCK types 2-5, as (opener, end condition). These are the
+# other family of constructs that runs past a heading, and they are WORSE
+# than an unclosed fence: a blank line ends HTML block types 6 and 7, but
+# types 2-5 end ONLY at their own end condition, so an unclosed one runs to
+# the end of the document. Measured on a real assembled chapter, a single
+# unclosed '<!--' in prose left 2 of 9 headings standing.
+#
+# Order matters only for readability here, not for correctness: '<!--' and
+# '<![CDATA[' both start '<!' but neither is followed by an ASCII letter, so
+# the type-4 pattern cannot shadow them.
+#
+# The structural fix is chapters.py's section order (prose last, so a prose
+# defect can only reach prose). This check is the defence in depth: it names
+# the section and the opener at the point of generation, where the model
+# output is still traceable to a section, rather than leaving a corrupted
+# chapter to be diagnosed later.
+_HTML_BLOCK_OPENERS: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"^ {0,3}<!--"), "-->"),          # type 2, comment
+    (re.compile(r"^ {0,3}<\?"), "?>"),            # type 3, processing instruction
+    (re.compile(r"^ {0,3}<!\[CDATA\["), "]]>"),   # type 5, CDATA
+    (re.compile(r"^ {0,3}<![A-Za-z]"), ">"),      # type 4, declaration (<!DOCTYPE)
+)
+
 # Gemini runs in JSON mode here (ai_client._call_gemini is JSON-only), so the
 # section split is enforced by the schema rather than by parsing labelled text.
 PROSE_SCHEMA: dict = {
@@ -82,7 +105,10 @@ _SYSTEM_PROMPT = (
     "directly into a chapter that already has its own headings; write plain "
     "prose paragraphs only. If you open a fenced code block you must close it "
     "with the same delimiter, because an unclosed fence hides the chapter's "
-    "own headings below it."
+    "own headings below it. The same applies to an HTML comment or "
+    "declaration ('<!--', '<?', '<!DOCTYPE', '<![CDATA['): close it on the "
+    "same line or do not write one at all. Cite only the record ids you were "
+    "given; never invent an id."
 )
 
 _PROMPT_HEADER = """You are writing one chapter of a curated bioinformatics
@@ -187,6 +213,16 @@ def validate_prose(payload: dict) -> dict[str, str]:
     bypass it would be closing, since the bypass needs the model to misbehave
     while this would fire on correct output.
 
+    A CommonMark HTML BLOCK of type 2-5 (`<!--`, `<?`, `<!DOCTYPE`,
+    `<![CDATA[`) that is never closed is rejected for the same reason, and
+    it is the worse case: a blank line ends HTML block types 6 and 7 but not
+    these, so an unclosed one runs to the end of the assembled chapter
+    (measured: 2 of 9 headings survived a single unclosed `<!--`). This is
+    defence in depth behind the structural fix -- chapters.py now places
+    every prose section BELOW every deterministic section, so a prose defect
+    can only reach prose. Enumerating bypasses has failed repeatedly; the
+    order is what bounds the damage, this check is what names it early.
+
     A fence that is never closed is itself rejected (fix round 4). Round 3's
     boolean toggle read an unclosed fence as "checking is off from here on",
     which looks safe and is the opposite: assemble_chapter concatenates this
@@ -234,10 +270,15 @@ def validate_prose(payload: dict) -> dict[str, str]:
         lines = value.splitlines()
         # The opening fence run while inside a fence, "" while outside.
         open_fence = ""
+        # (opener text, end condition) while inside a CommonMark HTML block of
+        # type 2-5, None while outside.
+        open_html: tuple[str, str] | None = None
         # The paragraph line a setext underline would underline, "" when there
-        # is none. A fence delimiter and any line inside a fence are not
-        # paragraph text, so a '-----' directly below one is a thematic break,
-        # not a heading (confirmed against a CommonMark renderer).
+        # is none. A fence delimiter, any line inside a fence, and any line of
+        # an HTML block are not paragraph text, so a '-----' directly below one
+        # is a thematic break, not a heading (confirmed against a CommonMark
+        # renderer). Always a str, never False -- it is interpolated with %r
+        # into the setext error message below.
         text_above = ""
 
         for line in lines:
@@ -247,13 +288,36 @@ def validate_prose(payload: dict) -> dict[str, str]:
                     marker = closing.group("marker")
                     if marker[0] == open_fence[0] and len(marker) >= len(open_fence):
                         open_fence = ""
-                text_above = False
+                text_above = ""
+                continue
+
+            if open_html is not None:
+                if open_html[1] in line:
+                    open_html = None
+                text_above = ""
                 continue
 
             opening = _FENCE_OPEN.match(line)
             if opening:
                 open_fence = opening.group("marker")
-                text_above = False
+                text_above = ""
+                continue
+
+            # An HTML block opener is checked BEFORE the heading rules: its
+            # own line is HTML, not paragraph text, and everything up to the
+            # end condition is inert. The end condition may sit on the opener
+            # line itself ('<!-- note -->'), which is the normal, legal case.
+            html_opened = False
+            for pattern, end_condition in _HTML_BLOCK_OPENERS:
+                match = pattern.match(line)
+                if match is None:
+                    continue
+                if end_condition not in line[match.end():]:
+                    open_html = (match.group(0).strip(), end_condition)
+                html_opened = True
+                break
+            if html_opened:
+                text_above = ""
                 continue
 
             if _ATX_HEADING.match(line):
@@ -286,6 +350,15 @@ def validate_prose(payload: dict) -> dict[str, str]:
                 % (section, open_fence)
             )
 
+        if open_html is not None:
+            raise ValueError(
+                "model response section %s opens an HTML block with %r that "
+                "is never closed by %r -- unlike a fence, a blank line does "
+                "not end this block, so it swallows every heading after it to "
+                "the end of the chapter"
+                % (section, open_html[0], open_html[1])
+            )
+
         prose[section] = value.strip()
 
     return prose
@@ -297,8 +370,21 @@ def validate_prose(payload: dict) -> dict[str, str]:
 # lint only needs to catch a bare, unmarked sentence, not parse English.
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
 
+# One citation marker. The id is captured loosely (anything up to the closing
+# bracket, empty included) so a MALFORMED marker is caught and named by the
+# validity check below rather than skipped by a strict pattern that simply
+# fails to see it.
+_CITATION_MARKER = re.compile(r"\[id:(?P<record_id>[^\]]*)\]")
 
-def _check_prose_is_cited(prose: dict[str, str]) -> None:
+# A repeated 'id:' label inside a multi-id marker ('[id: a, id: b]').
+_REPEATED_ID_LABEL = re.compile(r"^id:\s*", re.IGNORECASE)
+
+
+def _strip_id_label(part: str) -> str:
+    return _REPEATED_ID_LABEL.sub("", part.strip()).strip()
+
+
+def _check_prose_is_cited(prose: dict[str, str], record_ids: set[str]) -> None:
     """Cheap post-validation lint: every prose sentence must carry [id: ...].
 
     The prompt only REQUESTS a citation on every claim; nothing enforced it,
@@ -319,6 +405,15 @@ def _check_prose_is_cited(prose: dict[str, str]) -> None:
     before sentence-splitting, not concatenated by newline, so a sentence
     the model wrapped across two lines is not mistaken for two sentences,
     one of which would then look unmarked.
+
+    Every marker's id is also checked against `record_ids` -- the ids
+    actually handed to the generation. Presence alone is not traceability:
+    a marker citing a record that does not exist reads exactly like a real
+    citation to a human and to the skill that consumes these chapters, and
+    `[id: 2026-08-02-totally-made-up]` and a bare `[id: ]` both passed the
+    presence-only check and would have been committed. `record_ids` is a
+    required argument rather than an optional one: a default would let a
+    caller silently keep the weaker check.
     """
     for section, text in prose.items():
         kept_lines = []
@@ -350,6 +445,38 @@ def _check_prose_is_cited(prose: dict[str, str]) -> None:
                     % (section, sentence)
                 )
 
+        for match in _CITATION_MARKER.finditer(flattened):
+            body = match.group("record_id")
+            # One marker may carry several ids -- '[id: a, b]' and
+            # '[id: a, id: b]' are both what the model actually writes when a
+            # claim rests on two records (both forms appeared on live
+            # regenerations), and either is the honest citation for such a
+            # claim. Each id is validated separately, so a fabricated id
+            # hiding in a comma list is caught exactly like a lone one; what
+            # is NOT done is rejecting the FORM, which would hard-fail
+            # generation on correct output. The repeated 'id:' label is
+            # punctuation, not part of the id, so it is stripped per part.
+            cited_ids = [
+                _strip_id_label(part) for part in body.split(",")
+            ]
+            if not any(cited_ids) or not body.strip():
+                raise ValueError(
+                    "%s: empty citation marker %r -- a marker with no record "
+                    "id traces to nothing" % (section, match.group(0))
+                )
+            for cited_id in cited_ids:
+                if not cited_id:
+                    raise ValueError(
+                        "%s: citation marker %r has an empty id in its list"
+                        % (section, match.group(0))
+                    )
+                if cited_id not in record_ids:
+                    raise ValueError(
+                        "%s: citation marker names record id %r, which was "
+                        "not among the records supplied to this generation: %s"
+                        % (section, cited_id, sorted(record_ids))
+                    )
+
 
 def synthesize_prose(
     concept: str,
@@ -373,7 +500,7 @@ def synthesize_prose(
         thinking_level=thinking,
     )
     prose = validate_prose(payload)
-    _check_prose_is_cited(prose)
+    _check_prose_is_cited(prose, {record.id for record in records})
     return prose
 
 

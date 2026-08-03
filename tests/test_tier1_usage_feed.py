@@ -100,7 +100,9 @@ def test_written_records_carry_the_matched_methods_and_implementations(tmp_path)
     assert record.citation.first_author == "Smith"
     assert record.citation.journal == "Nat Commun"
     assert record.citation.year == 2026
-    assert record.modality == ["scATAC-seq", "Visium"]
+    # DataTypes carries ASSAY names; a record's modality is the ANALYSIS axis.
+    # "scATAC-seq" -> scATAC and "Visium" -> spatial_rna (modality.py).
+    assert record.modality == ["scATAC", "spatial_rna"]
 
 
 # ---------------------------------------------------------------------------
@@ -462,3 +464,180 @@ def test_rerun_on_the_same_paper_does_not_duplicate_or_overwrite(tmp_path):
     assert len(files) == 1
     assert files[0].read_text() == original_text
     assert stats2.skipped_existing == 1
+
+
+# ---------------------------------------------------------------------------
+# C2: DataTypes is an assay vocabulary; a record's modality is not.
+# ---------------------------------------------------------------------------
+
+def test_h_and_e_only_paper_writes_no_modality(tmp_path):
+    """The reproduced defect, end to end. An H&E-only paper produced a status
+    row `| Leiden | Scanpy | H&E |` and a `### H&E` section reading "This
+    modality is **not audited**". An empty modality list is honest; a
+    guessed one corrupts the chapter and cannot be withdrawn (append-only)."""
+    rec = _rec(DataTypes="H&E")
+    stats = UsageFeedStats()
+
+    _emit_usage_records(tmp_path, rec, stats)
+
+    record = parse_record(next((tmp_path / "references" / "clustering").glob("*.md")))
+    assert record.modality == []
+    assert stats.analyses_resolved == 1  # the record is still written, just unscoped
+
+
+def test_visium_paper_writes_the_spatial_rna_modality(tmp_path):
+    rec = _rec(DataTypes="Visium, H&E")
+    stats = UsageFeedStats()
+
+    _emit_usage_records(tmp_path, rec, stats)
+
+    record = parse_record(next((tmp_path / "references" / "clustering").glob("*.md")))
+    assert record.modality == ["spatial_rna"]
+
+
+# ---------------------------------------------------------------------------
+# I3: two blocks, one concept, one run -- merge, never a collision skip.
+# ---------------------------------------------------------------------------
+
+def test_two_blocks_resolving_to_one_concept_merge_into_one_record(tmp_path, caplog):
+    """"clustering" and "community detection" are both CONCEPT_ALIASES keys
+    for `clustering`, so within ONE run they collide on the record id
+    (date, pmid, concept). The second block used to be counted
+    skipped_existing and logged "record already exists" -- real evidence
+    dropped and reported as an idempotent rerun skip. Both blocks' methods
+    and implementations must land in the single record instead."""
+    rec = _rec(comp_methods={
+        "summary_2to3_sentences": "Clustered twice.",
+        "analyses": [
+            {"analysis_name": "clustering",
+             "steps": [{"step": "Leiden clustering", "tool": "Scanpy"}]},
+            {"analysis_name": "community detection",
+             "steps": [{"step": "Louvain community detection", "tool": "Seurat"}]},
+        ],
+    })
+    stats = UsageFeedStats()
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        _emit_usage_records(tmp_path, rec, stats)
+
+    files = list((tmp_path / "references" / "clustering").glob("*.md"))
+    assert len(files) == 1
+
+    record = parse_record(files[0])
+    assert record.methods == ["Leiden", "Louvain"]
+    assert record.implementations == ["Scanpy", "Seurat"]
+
+    assert stats.analyses_seen == 2
+    assert stats.analyses_resolved == 2
+    assert stats.skipped_existing == 0      # NOT a collision -- nothing was skipped
+    assert stats.unresolved_names == []
+    assert not any("already exists" in r.message for r in caplog.records)
+    assert any("merged into one record" in r.message for r in caplog.records)
+
+
+def test_merged_blocks_still_reconcile_in_the_printed_summary(tmp_path, caplog):
+    """Counters are in units of analysis BLOCKS, not files, so the identity
+    still closes when several blocks merge into one record."""
+    stats = UsageFeedStats()
+
+    _emit_usage_records(tmp_path, _rec(comp_methods={
+        "summary_2to3_sentences": "x",
+        "analyses": [
+            {"analysis_name": "clustering", "steps": [{"step": "Leiden", "tool": "Scanpy"}]},
+            {"analysis_name": "community detection", "steps": [{"step": "Louvain", "tool": "Seurat"}]},
+            {"analysis_name": "a totally new stage", "steps": []},
+        ],
+    }), stats)
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        stats.log_summary()
+    [msg] = [r.message for r in caplog.records if "methods feed:" in r.message]
+
+    seen = int(re.search(r"(\d+) analysis block\(s\) seen", msg).group(1))
+    written = int(re.search(r"(\d+) written", msg).group(1))
+    already_present = int(re.search(r"(\d+) already present", msg).group(1))
+    unresolved_blocks = int(re.search(r"(\d+) unresolved block\(s\)", msg).group(1))
+    failures = int(re.search(r"(\d+) write failure\(s\)", msg).group(1))
+
+    assert written + already_present + unresolved_blocks + failures == seen
+    assert (written, already_present, unresolved_blocks, failures, seen) == (2, 0, 1, 0, 3)
+
+
+def test_cross_run_collision_skip_is_unchanged_by_the_merge(tmp_path, caplog):
+    """The merge must not weaken the append-only cross-run skip: a SECOND run
+    on the same paper and day still finds the file and skips it, counting
+    every merged block."""
+    comp = {
+        "summary_2to3_sentences": "Clustered twice.",
+        "analyses": [
+            {"analysis_name": "clustering", "steps": [{"step": "Leiden", "tool": "Scanpy"}]},
+            {"analysis_name": "community detection", "steps": [{"step": "Louvain", "tool": "Seurat"}]},
+        ],
+    }
+    _emit_usage_records(tmp_path, _rec(comp_methods=comp), UsageFeedStats())
+    original = next((tmp_path / "references" / "clustering").glob("*.md")).read_text()
+
+    stats2 = UsageFeedStats()
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        _emit_usage_records(tmp_path, _rec(comp_methods=comp), stats2)
+
+    files = list((tmp_path / "references" / "clustering").glob("*.md"))
+    assert len(files) == 1
+    assert files[0].read_text() == original
+    assert stats2.skipped_existing == 2
+    assert stats2.analyses_resolved == 2
+    assert any("already exists" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# M7: a failed write must not be counted as a written record.
+# ---------------------------------------------------------------------------
+
+def test_a_failed_write_is_not_counted_as_a_resolved_record(tmp_path, monkeypatch):
+    """analyses_resolved was incremented BEFORE the write, so an OSError left
+    the run summary claiming a record that does not exist on disk."""
+    import litintel.methodintel.writer as writer_module
+
+    def _explode(*args, **kwargs):
+        raise OSError("disk is full")
+
+    monkeypatch.setattr(writer_module, "write_usage_record", _explode)
+
+    stats = UsageFeedStats()
+    _emit_usage_records(tmp_path, _rec(), stats)
+
+    assert stats.analyses_seen == 1
+    assert stats.analyses_resolved == 0
+    assert stats.write_failures == 1
+    assert stats.skipped_existing == 0
+    assert not list((tmp_path / "references").rglob("*.md"))
+
+
+def test_a_failed_write_keeps_the_summary_arithmetic_closed(tmp_path, monkeypatch, caplog):
+    """Leaving a failed write uncounted would make the line short by exactly
+    the blocks it lost, which reads like a dropped block rather than a disk
+    problem."""
+    import litintel.methodintel.writer as writer_module
+
+    monkeypatch.setattr(
+        writer_module, "write_usage_record",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("read-only file system")),
+    )
+
+    stats = UsageFeedStats()
+    _emit_usage_records(tmp_path, _rec(), stats)
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        stats.log_summary()
+    # The warning line also starts "methods feed:", so select the summary by
+    # its own leading phrase rather than by the module prefix.
+    [msg] = [r.message for r in caplog.records if "paper(s) eligible" in r.message]
+
+    seen = int(re.search(r"(\d+) analysis block\(s\) seen", msg).group(1))
+    written = int(re.search(r"(\d+) written", msg).group(1))
+    already_present = int(re.search(r"(\d+) already present", msg).group(1))
+    unresolved_blocks = int(re.search(r"(\d+) unresolved block\(s\)", msg).group(1))
+    failures = int(re.search(r"(\d+) write failure\(s\)", msg).group(1))
+
+    assert written + already_present + unresolved_blocks + failures == seen
+    assert (written, failures, seen) == (0, 1, 1)
