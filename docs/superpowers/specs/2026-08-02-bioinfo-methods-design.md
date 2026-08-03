@@ -280,16 +280,8 @@ recommendation sees exactly where it came from and can discount it. Only the
 spatial-ATAC seed is in a flagship journal, and it is the *least* complete of
 the three.
 
-**The structural finding: spatial ATAC has almost no concepts of its own.**
-Its computational stages are inherited -- from scATAC (peak calling, iterative
-LSI, gene-activity scoring, motif enrichment) and from spatial transcriptomics
-(spatial domains, neighborhood analysis, registration) -- with very little that
-is unique to the intersection. This is an argument *for* concept-keyed chapters
-and against modality-keyed ones (D9): a `spatial_atac/` directory would be
-mostly empty while duplicating two other directories, whereas concept-keyed
-chapters let a spatial ATAC question land in `clustering.md` or
-`neighborhood_analysis.md` and pick up evidence recorded from any modality.
-A modality is a property of a record, not a chapter.
+The search surfaced a structural fact that governs the whole layout. It gets
+its own subsection: 3.4.4.
 
 Precedent already in this repo family: `skills/bioinfo-code/references/ArchR/`
 mirrors the ArchR manual's chapter structure. That is this move, applied one
@@ -509,6 +501,56 @@ free. It is explicitly *not* a discovery channel. A method must already exist in
 the taxonomy before Tier 1 can confirm adoption of it -- so the ordering is
 seed-from-maps first, confirm-from-corpus second, never the reverse.
 
+#### 3.4.4 Young fields borrow, and the borrowing is the knowledge
+
+The seed search made this concrete rather than theoretical. Spatial ATAC has
+almost no computational concepts of its own: it inherits peak calling, iterative
+LSI, gene-activity scoring and motif enrichment from scATAC, and spatial
+domains, neighborhood analysis and registration from spatial transcriptomics.
+
+**This is not special to spatial ATAC. It is what a young field looks like.**
+Spatial transcriptomics borrows heavily from scRNA-seq for the same reason --
+normalization, feature selection, dimensionality reduction, clustering,
+annotation, differential expression are all scRNA machinery applied to spots or
+segmented cells. The gradient is legible in the seeds themselves: scRNA has two
+consensus reviews, spatial RNA has an ecosystem book, spatial ATAC has one
+flagship method paper. Maturity and originality track together, and a field
+borrows from the nearest mature neighbour until it develops its own.
+
+Three consequences, all structural:
+
+**1. Chapters are keyed on concepts, not modalities (reinforces D9).** A
+`spatial_atac/` directory would be mostly empty while duplicating two others.
+Concept-keyed chapters let a spatial ATAC question land in `clustering.md` and
+pick up evidence recorded from any modality. **Modality is a property of a
+record, not a directory** -- hence the `modality` frontmatter field in section 4.
+
+**2. The chapter's "current recommendation" is modality-conditional.** Where a
+borrowed method's answer differs by modality, the status table carries a
+modality column and the recommendation is stated per modality. Where it does
+not differ, one row serves all -- which is itself the useful statement that the
+borrowing holds.
+
+**3. The highest-value record is the one about where a borrowed method
+breaks.** This follows directly. If spatial RNA clustering is scRNA clustering,
+then the *only* knowledge unique to spatial RNA clustering is the delta: which
+scRNA assumption fails on spatial data, what breaks, and what modification
+fixes it -- spatial autocorrelation violating the independence assumption,
+spot-level mixtures being multi-cell, dropout structure differing under
+imaging-based assays. Everything else is already in the scRNA chapter and
+should not be restated there.
+
+So `adaptation` joins the record `kind` vocabulary and `adapted_from` joins the
+edge vocabulary. An `adaptation` record names the source modality, the borrowed
+method, the assumption that fails, and what was done about it. These records are
+scarce, expensive to produce, and exactly what a search engine cannot deliver --
+which puts them alongside feed 3 (personal observation, 4.1) as the reason this
+base outperforms a web search rather than merely being more stable than one.
+
+The audit consequence: a concept whose chapter has *only* borrowed evidence and
+zero `adaptation` records for a modality is not a finished chapter. It is an
+open question, and it should read as one.
+
 ---
 
 ## 4. Layer 1: reference records
@@ -525,7 +567,8 @@ id: 2026-08-02-traag2019-louvain-connectivity
 concept: clustering      # null is legal and preferred over a guess (3.4.2)
 modality: ["scRNA"]      # scRNA | scATAC | multiome | spatial_rna | spatial_atac
 methods: ["Louvain", "Leiden"]
-kind: benchmark          # benchmark | usage | deprecation | best_practice | personal | seed
+kind: benchmark          # benchmark | usage | deprecation | best_practice |
+                         # personal | seed | adaptation (3.4.4)
 recorded: 2026-08-02
 seed_rung: null          # 1 | 2 | 3, REQUIRED when kind is seed (D1b), null otherwise
 source_ref:
@@ -636,10 +679,16 @@ by hand.
 Required sections:
 
 1. **Current recommendation** -- one method, one implementation, one sentence.
+   Stated **per modality** where the answer differs, once where it does not
+   (3.4.4).
 2. **Status table** -- per method: `lifecycle_status`, `last_reviewed`,
-   `successor_methods`. Fields are exactly
+   `successor_methods`, plus a `modality` column. The first three are exactly
    `schema.py::MethodOption` (`:119-135`), which **already carries all three**
-   (`:132-134`) -- no schema change needed.
+   (`:132-134`) -- no schema change needed there.
+2a. **Borrowed-and-broken** -- for each modality that inherits this concept,
+   the `adaptation` records: which assumption from the source modality fails
+   and what was done about it. Empty here is not "clean", it is "unaudited",
+   and renders as an open question (3.4.4).
 3. **Tradeoffs** -- when each option becomes the better choice and what it costs.
 4. **What changed** -- most recent status transitions, each citing the reference
    record id that caused it.
@@ -716,7 +765,7 @@ either.
 | Component | Location | Role here |
 |---|---|---|
 | `METHOD_ALIASES` / `IMPLEMENTATION_ALIASES` | `router.py:15`, `:29` | Generated from `LEXICON.md`. **`CONCEPT_ALIASES` must be added** (3.4.2). |
-| `MethodGraphEdge.ALLOWED_EDGE_TYPES` | `schema.py:154+` | **`split_into`, `merged_from`, `shares_mechanism_with` must be added** -- concept history and the mechanism relation are unrepresentable without them. |
+| `MethodGraphEdge.ALLOWED_EDGE_TYPES` | `schema.py:154+` | **`split_into`, `merged_from`, `shares_mechanism_with`, `adapted_from` must be added** -- concept history, the mechanism relation, and cross-modality borrowing (3.4.4) are unrepresentable without them. |
 | `_extract_aliases_in_query_order()` | `router.py:132` | Alias -> canonical lookup. Works as-is once the stage dict exists. |
 | `RouterMode` (5 modes) | `schema.py:8-16` | Classifies the question. `STALENESS_CHECK` is the "what changed" path. |
 | `ArtifactType` | `schema.py:18-26` | `LIFECYCLE_REPORT` and `STAGE_MAP` map onto chapters. |
@@ -785,6 +834,11 @@ Explicitly deferred until a real chapter proves the need:
 - [ ] At least one `shares_mechanism_with` edge exists between methods that sit
       in **different** chapters -- proving mechanism is captured without
       distorting the decision-keyed chapter set.
+- [ ] The clustering chapter carries at least one `adaptation` record with an
+      `adapted_from` edge -- a named scRNA assumption that fails on spatial
+      data -- and the chapter's status table is modality-aware (3.4.4). A
+      modality with no `adaptation` record renders as an open question rather
+      than as settled.
 - [ ] A question phrased in the user's own words, not the field's, reaches the
       right chapter (the "spatial region niche analysis" -> "neighborhood
       analysis" path) -- via `CONCEPT_ALIASES` on tier 1, or semantic match on
