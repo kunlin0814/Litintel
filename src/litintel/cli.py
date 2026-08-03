@@ -102,6 +102,48 @@ def methodintel_route(question: str):
     decision = route_question(question)
     typer.echo(yaml.safe_dump(decision.as_cli_dict(), sort_keys=False))
 
+
+@methodintel_app.command("sync-aliases")
+def methodintel_sync_aliases(config: str = "configs/tier1_pca.yaml"):
+    """Print the CONCEPT_ALIASES literal generated from LEXICON.md.
+
+    Prints rather than rewrites router.py: regenerating source in place would
+    make a hand-reviewable constant into a build artifact. Also prints the
+    Unplaced terms LEXICON.md carries but deliberately assigns no concept
+    (spec 3.4.2) -- naming them here keeps "excluded because unplaced"
+    observably different from "silently dropped".
+    """
+    from litintel.methodintel.lexicon import (
+        build_concept_aliases,
+        parse_lexicon,
+        parse_unplaced_terms,
+    )
+    from litintel.methodintel.records import RecordError, resolve_methods_root
+
+    cfg = load_config_from_yaml(config)
+    try:
+        methods_root = resolve_methods_root(cfg.methods_repo_path)
+    except RecordError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    lexicon_path = methods_root / "LEXICON.md"
+    entries = parse_lexicon(lexicon_path)
+    aliases = build_concept_aliases(entries)
+    unplaced = parse_unplaced_terms(lexicon_path)
+
+    typer.echo("CONCEPT_ALIASES: dict[str, str] = {")
+    for label, concept in sorted(aliases.items()):
+        typer.echo('    "%s": "%s",' % (label, concept))
+    typer.echo("}")
+    typer.echo("")
+    typer.echo(
+        "# %d unplaced term(s) excluded (no concept assigned yet, spec 3.4.2):"
+        % len(unplaced)
+    )
+    for term in sorted(unplaced):
+        typer.echo("#   %s" % term)
+
 app.add_typer(methodintel_app, name="methodintel")
 
 

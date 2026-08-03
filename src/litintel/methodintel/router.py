@@ -34,6 +34,30 @@ IMPLEMENTATION_ALIASES: dict[str, str] = {
     "scanpy": "Scanpy",
 }
 
+# Generated from dotfiles/skills/bioinfo-methods/LEXICON.md, not hand-maintained.
+# Regenerate with: venv/bin/litintel methodintel sync-aliases
+# Checked in rather than loaded at import time so the router keeps working with
+# no knowledge base present -- Litintel must not hard-depend on dotfiles.
+CONCEPT_ALIASES: dict[str, str] = {
+    "cell grouping": "clustering",
+    "cell-type identification": "cluster_annotation",
+    "cellular neighborhoods": "neighborhood_analysis",
+    "cluster annotation": "cluster_annotation",
+    "clustering": "clustering",
+    "clustering and annotation": "cluster_annotation",
+    "community detection": "clustering",
+    "dimension reduction": "dimensionality_reduction",
+    "dimensionality reduction": "dimensionality_reduction",
+    "gas calculation": "gene_activity_scoring",
+    "gene-activity scoring": "gene_activity_scoring",
+    "neighborhood analysis": "neighborhood_analysis",
+    "niche identification": "neighborhood_analysis",
+    "normalization": "normalization",
+    "spatial co-occurrence": "neighborhood_analysis",
+    "unsupervised cell type discovery": "clustering",
+    "variance stabilization": "normalization",
+}
+
 
 STAGE_KEYWORDS: list[tuple[str, str]] = [
     ("cluster", "clustering"),
