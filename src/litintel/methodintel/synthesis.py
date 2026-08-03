@@ -16,12 +16,22 @@ from litintel.methodintel.records import ReferenceRecord, load_concept_records
 
 _SECTIONS = ("recommendation", "tradeoffs", "open_questions")
 
-# A Markdown heading line (leading whitespace allowed) inside model prose.
-# assemble_chapter trusts prose verbatim, so a stray '#' line would render as
-# a second, fabricated heading ahead of the real deterministic section that
-# shares its name -- exactly the corruption the two-layer split exists to
-# prevent (fix round 1, finding 1).
-_HEADING_LINE = re.compile(r"^\s*#")
+# Every heading form CommonMark/GitHub will actually render, so a model
+# response cannot fabricate a heading by switching syntax (fix round 1 caught
+# ATX only; fix round 2 closes the setext and HTML bypasses the re-review
+# found live). assemble_chapter trusts prose verbatim, so any of these would
+# render as a second, fabricated heading ahead of the real deterministic
+# section sharing its name -- the corruption the two-layer split exists to
+# prevent.
+_ATX_HEADING = re.compile(r"^\s*#")
+_HTML_HEADING = re.compile(r"<h[1-6][^>]*>", re.IGNORECASE)
+# Setext underline: a line of only '=' or only '-' characters. Whether it is
+# a heading underline or a legitimate horizontal rule/prose divider depends
+# entirely on what precedes it -- caught only when it directly follows a
+# non-blank text line (checked at the call site, not in this regex), per the
+# re-reviewer's precise instruction not to break a `---` that opens a section
+# or follows a blank line.
+_SETEXT_UNDERLINE = re.compile(r"^(=+|-+)\s*$")
 
 # Gemini runs in JSON mode here (ai_client._call_gemini is JSON-only), so the
 # section split is enforced by the schema rather than by parsing labelled text.
@@ -38,10 +48,12 @@ PROSE_SCHEMA: dict = {
 _SYSTEM_PROMPT = (
     "You write chapters for a curated bioinformatics method knowledge base. "
     "You write ASCII only and you never assert anything the supplied records "
-    "do not support. You never emit Markdown headings -- no line may start "
-    "with '#', with or without leading whitespace -- because your prose is "
-    "inserted directly into a chapter that already has its own headings; "
-    "write plain prose paragraphs only."
+    "do not support. You never emit a heading of any kind -- not an ATX "
+    "heading ('#' at the start of a line), not a setext heading (a text line "
+    "followed by a line of only '=' or only '-' characters), and not an HTML "
+    "heading tag ('<h1>' through '<h6>') -- because your prose is inserted "
+    "directly into a chapter that already has its own headings; write plain "
+    "prose paragraphs only."
 )
 
 _PROMPT_HEADER = """You are writing one chapter of a curated bioinformatics
@@ -96,13 +108,26 @@ def validate_prose(payload: dict) -> dict[str, str]:
     with nothing under it, which reads as "nothing to say here" rather than as
     the generation failure it is.
 
-    A Markdown heading line inside a section is rejected, never escaped or
-    stripped (fix round 1, finding 1): assemble_chapter inserts prose
-    verbatim, so a model-emitted '#' line would render as a second,
-    fabricated heading ahead of the real deterministic section sharing its
-    name -- the one thing the two-layer split (chapters.py vs. this module)
-    exists to prevent. Chapters are Layer 2 and regenerate on command (spec
-    D5), so failing loud here costs one re-run, not a corrupted chapter.
+    A heading of any kind -- ATX, setext, or HTML -- is rejected, never
+    escaped or stripped (fix round 1 finding 1; setext/HTML closed in fix
+    round 2 after the re-reviewer found them as live bypasses):
+    assemble_chapter inserts prose verbatim, so any of these would render as
+    a second, fabricated heading ahead of the real deterministic section
+    sharing its name -- the one thing the two-layer split (chapters.py vs.
+    this module) exists to prevent. Chapters are Layer 2 and regenerate on
+    command (spec D5), so failing loud here costs one re-run, not a
+    corrupted chapter. A setext underline (a line of only '=' or only '-')
+    is flagged ONLY when it directly follows a non-blank text line -- the
+    same line following a blank line, or opening the section, is a
+    legitimate horizontal rule/divider and must stay legal prose.
+
+    Non-ASCII content is rejected (fix round 2, finding 4): the system
+    prompt asks for ASCII, but this project's ASCII-only rule does not get
+    to depend on the model choosing to comply, since this text is written
+    into a committed Markdown file. This also closes the two Unicode
+    heading-lookalikes (fullwidth '#', lookalike letters) the re-reviewer
+    found -- neither renders as a real Markdown/HTML heading, but both are
+    non-ASCII regardless.
 
     An unrecognised key is also rejected -- same fail-loud posture as
     records.py's `extra="forbid"`. PROSE_SCHEMA already constrains what the
@@ -120,13 +145,42 @@ def validate_prose(payload: dict) -> dict[str, str]:
         value = payload.get(section)
         if not isinstance(value, str) or not value.strip():
             raise ValueError("model response is missing or empty section %s" % section)
-        for line in value.splitlines():
-            if _HEADING_LINE.match(line):
+
+        try:
+            value.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise ValueError(
+                "model response section %s contains non-ASCII character %r "
+                "at position %d"
+                % (section, value[exc.start], exc.start)
+            )
+
+        lines = value.splitlines()
+        for index, line in enumerate(lines):
+            if _ATX_HEADING.match(line):
                 raise ValueError(
-                    "model response section %s contains a Markdown heading "
+                    "model response section %s contains an ATX heading "
                     "line %r -- prose must not emit headings"
                     % (section, line.strip())
                 )
+            if _HTML_HEADING.search(line):
+                raise ValueError(
+                    "model response section %s contains an HTML heading "
+                    "line %r -- prose must not emit headings"
+                    % (section, line.strip())
+                )
+            if (
+                _SETEXT_UNDERLINE.match(line)
+                and index > 0
+                and lines[index - 1].strip()
+            ):
+                raise ValueError(
+                    "model response section %s contains a setext heading "
+                    "underline %r beneath the text %r -- prose must not "
+                    "emit headings"
+                    % (section, line.strip(), lines[index - 1].strip())
+                )
+
         prose[section] = value.strip()
 
     return prose

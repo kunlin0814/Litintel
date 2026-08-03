@@ -130,6 +130,74 @@ def test_synthesize_prose_rejects_injected_headings_end_to_end():
             synthesize_prose("clustering", [_record()], "gemini-x", "MEDIUM")
 
 
+# --- Fix round 2, finding 1: setext and HTML heading bypasses, found live by
+# the re-reviewer against the round-1 ATX-only check. A legitimate horizontal
+# rule after a blank line (or at the start of a section) must stay legal.
+
+
+def test_validate_prose_rejects_a_setext_heading_with_dash_underline():
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "Status\n-----\nLouvain is faster.",
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_rejects_a_setext_heading_with_equals_underline():
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "x",
+            "open_questions": "Status\n=====\nMore text.",
+        })
+
+
+def test_validate_prose_rejects_an_html_heading_tag():
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "<h2>Status</h2>\nLouvain is faster.",
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_rejects_non_ascii_content():
+    """Fix round 2, finding 4: ASCII compliance must not depend on the model
+    choosing to comply -- this also disposes of the fullwidth '##' and
+    Unicode-lookalike-letter bypasses the re-reviewer flagged as harmless
+    Markdown but which are non-ASCII regardless."""
+    with pytest.raises(ValueError, match="non-ASCII"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "＃＃ Status\nLouvain is faster.",  # fullwidth '##'
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_rejects_a_unicode_lookalike_letter():
+    with pytest.raises(ValueError, match="non-ASCII"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "x",
+            "open_questions": "Οpen question: resolution selection.",  # capital Omicron, not "O"
+        })
+
+
+def test_validate_prose_allows_a_horizontal_rule_after_a_blank_line():
+    """The negative case that matters as much as the positive ones: a '---'
+    divider that follows a blank line (or opens the section) is a legitimate
+    horizontal rule, not a setext heading, and must remain legal prose."""
+    prose = validate_prose({
+        "recommendation": "Use Leiden.\n\n---\n\nSee also Louvain.",
+        "tradeoffs": "---\n\nOpens with a rule, which is legal.",
+        "open_questions": "x",
+    })
+
+    assert "---" in prose["recommendation"]
+    assert "---" in prose["tradeoffs"]
+
+
 # --- Fix round 1, finding 3: an unrecognised key must raise, not be dropped ---
 
 
@@ -183,20 +251,34 @@ def test_generate_chapter_happy_path_wires_synthesize_prose_and_assembles_chapte
         "open_questions": "Resolution parameter selection is unresolved.",
     }
 
+    # Sentinel values, not real model/thinking ids: fix round 2 finding 2. A
+    # real model name (e.g. "gemini-3.6-flash") is also a plausible hardcode
+    # inside synthesize_prose, so asserting on it would still pass against a
+    # version that ignores the arguments and hardcodes that same literal (as
+    # the re-reviewer demonstrated). These sentinels cannot coincide with any
+    # plausible hardcode, so the test fails the moment anything other than
+    # the passed-in argument reaches _call_gemini.
+    sentinel_model = "sentinel-model-does-not-exist"
+    sentinel_thinking = "SENTINEL_LEVEL"
+
     with patch(
         "litintel.enrich.ai_client._call_gemini",
         return_value=(fake_payload, {"input": 1}),
     ) as mock_call, patch(
         "litintel.enrich.ai_client._get_gemini_client", return_value="FAKE_CLIENT"
     ):
-        text = generate_chapter(methods_root, "clustering", "gemini-3.6-flash", "HIGH")
+        text = generate_chapter(
+            methods_root, "clustering", sentinel_model, sentinel_thinking
+        )
 
-    # The model id and thinking level came from config (the arguments passed
-    # in), never from the environment -- this project has been bitten before
-    # by a model silently coming from somewhere other than the YAML.
+    # The model id and thinking level came from the arguments passed in
+    # (i.e. from cfg.ai.pass2_model / cfg.ai.pass2_thinking at the CLI layer),
+    # never hardcoded and never read from the environment -- this project has
+    # been bitten before by a model silently coming from somewhere other than
+    # the YAML.
     _, kwargs = mock_call.call_args
-    assert kwargs["model"] == "gemini-3.6-flash"
-    assert kwargs["thinking_level"] == "HIGH"
+    assert kwargs["model"] == sentinel_model
+    assert kwargs["thinking_level"] == sentinel_thinking
     assert kwargs["client"] == "FAKE_CLIENT"
 
     # Prose lands in the right places.
