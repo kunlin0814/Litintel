@@ -174,8 +174,9 @@ def test_render_what_changed_with_no_transitions_says_so_exactly():
 
 
 def test_render_what_changed_orders_mixed_kinds_by_id():
-    """Only deprecation/adaptation kinds are transitions; benchmark/usage are
-    excluded; order is by record id (chronological), not input order."""
+    """Only deprecation/adaptation/best_practice kinds are transitions;
+    benchmark/usage are excluded; order is by record id (chronological), not
+    input order."""
     block = render_what_changed([
         _record("2026-08-02-c", kind="benchmark", body="Not a transition."),
         _record("2026-08-02-b", kind="adaptation", body="Second transition."),
@@ -188,6 +189,21 @@ def test_render_what_changed_orders_mixed_kinds_by_id():
     assert first_index < second_index
     assert "[id: 2026-08-02-a]" in block
     assert "[id: 2026-08-02-b]" in block
+
+
+def test_render_what_changed_includes_best_practice_transitions():
+    """Task 11 fix round 1: a `kind: best_practice` record that sets a new
+    current default (e.g. Leiden for spatial ATAC) is a status transition and
+    must appear in "What changed" -- the acceptance run found this section
+    blind to this kind entirely."""
+    block = render_what_changed([
+        _record("2026-08-02-a", kind="best_practice", body="New default set."),
+        _record("2026-08-02-b", kind="benchmark", body="Not a transition."),
+    ])
+
+    assert "New default set." in block
+    assert "[id: 2026-08-02-a]" in block
+    assert "Not a transition." not in block
 
 
 def test_what_changed_cites_record_ids_not_numbers():

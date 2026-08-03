@@ -129,6 +129,41 @@ def test_unresolved_analysis_name_is_counted_and_surfaced(tmp_path, caplog):
 
 
 # ---------------------------------------------------------------------------
+# Task 11 fix round 1: analysis_name misses, tags fallback hits
+# ---------------------------------------------------------------------------
+
+def test_analysis_name_miss_resolves_via_tags_fallback(tmp_path, caplog):
+    """analysis_name is free-form and misses CONCEPT_ALIASES entirely, but
+    the paper's controlled-vocabulary `tags` carries a value that matches --
+    this must count as RESOLVED, not unresolved, and must actually write a
+    record (proving the fallback, not just the counter, works)."""
+    rec = _rec(comp_methods={
+        "summary_2to3_sentences": "Used Leiden via ArchR for clustering.",
+        "tags": ["deconvolution", "clustering"],
+        "analyses": [
+            {
+                "analysis_name": "Single-cell preprocessing and integration",
+                "steps": [{"step": "Leiden clustering", "tool": "ArchR"}],
+            },
+        ],
+    })
+    stats = UsageFeedStats()
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        _emit_usage_records(tmp_path, rec, stats)
+
+    assert stats.analyses_seen == 1
+    assert stats.analyses_resolved == 1
+    assert stats.unresolved_names == []
+    written = list((tmp_path / "references" / "clustering").glob("*.md"))
+    assert len(written) == 1
+    assert any(
+        "resolved via tag" in r.message and r.levelname == "INFO"
+        for r in caplog.records
+    )
+
+
+# ---------------------------------------------------------------------------
 # Silent zero-yield case 2: empty/missing comp_methods is counted, not raised
 # ---------------------------------------------------------------------------
 

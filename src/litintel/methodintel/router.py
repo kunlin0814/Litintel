@@ -40,6 +40,7 @@ IMPLEMENTATION_ALIASES: dict[str, str] = {
 # no knowledge base present -- Litintel must not hard-depend on dotfiles.
 CONCEPT_ALIASES: dict[str, str] = {
     "cell grouping": "clustering",
+    "cell type annotation": "cluster_annotation",
     "cell-type identification": "cluster_annotation",
     "cellular neighborhoods": "neighborhood_analysis",
     "cluster annotation": "cluster_annotation",

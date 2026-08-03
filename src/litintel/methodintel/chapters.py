@@ -11,9 +11,33 @@ from __future__ import annotations
 from litintel.methodintel.records import ReferenceRecord
 
 
-# Record kinds that represent a status transition, so they belong in the
-# "What changed" section rather than only in the bibliography.
-_TRANSITION_KINDS: frozenset[str] = frozenset({"deprecation", "adaptation"})
+# Record kinds that ASSERT a new current status for a (method, modality) pair,
+# so they belong in the "What changed" section rather than only in the
+# bibliography. Checked against every kind records.py::ALLOWED_KINDS allows,
+# not just the one a real record exposed as missing (Task 11 fix round 1):
+#   deprecation    -- retires a method's status. Transition.
+#   adaptation     -- sets a modality-specific correction to a borrowed
+#                      method's status. Transition.
+#   best_practice  -- asserts what the current default IS for a modality
+#                      (e.g. "Leiden is the current default for spatial
+#                      ATAC"). Transition -- this is the kind Task 11's
+#                      acceptance run used and "What changed" missed it.
+#   benchmark      -- comparative measurement supporting a status (e.g. a
+#                      connectivity proof); it backs a recommendation but
+#                      does not itself assert the new state. Not a
+#                      transition.
+#   personal       -- a hand-written observation from real pipeline work
+#                      (spec Feed 3); evidentiary like benchmark, but not an
+#                      assertion of a new status on its own. Not a
+#                      transition.
+#   usage          -- a real-run signal of what was actually used (spec Feed
+#                      4); records a fact about a paper, not a status change.
+#                      Not a transition.
+#   seed           -- taxonomy provenance bookkeeping (`concept: null`);
+#                      never about a method's status. Not a transition.
+_TRANSITION_KINDS: frozenset[str] = frozenset({
+    "deprecation", "adaptation", "best_practice",
+})
 
 
 def render_bibliography(

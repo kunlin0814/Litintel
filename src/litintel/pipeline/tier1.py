@@ -474,9 +474,12 @@ class UsageFeedStats:
     Silent zero-yield is the failure this design exists to prevent: a paper
     contributing nothing to the knowledge base, with nobody told. These
     counters make every way that happens visible -- `papers_no_comp_methods`
-    (an empty/missing Pass 2 extraction), `unresolved_names` (an
-    analysis_name that CONCEPT_ALIASES does not recognize, which is also the
-    exact raw material for the next LEXICON.md alias pass), and
+    (an empty/missing Pass 2 extraction), `unresolved_names` (BOTH the
+    free-form `analysis_name` AND the controlled-vocabulary `tags` fallback
+    missed CONCEPT_ALIASES -- Task 11 acceptance found `analysis_name` alone
+    resolves 0/6 of the Pass 2 prompt's own worked examples, so `tags` is
+    the raw material that actually matters for the next LEXICON.md alias
+    pass), and
     `skipped_existing` (a resolved analysis whose record already existed --
     Layer 1's append-only collision-skip, which used to be the one outcome
     with no counter and no log line). `log_summary()` is the one place a
@@ -516,6 +519,15 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
     A paper contributes to several concepts at once -- an scRNA study does
     clustering AND normalization AND annotation -- so this emits one record per
     resolvable analysis rather than picking a single winner.
+
+    Resolution tries `analysis_name` against CONCEPT_ALIASES first, and only
+    when that misses falls back to the paper's controlled-vocabulary `tags`
+    (Task 11 fix round 1): `analysis_name` is free-form prose the Pass 2
+    prompt only illustrates by example, never constrains, and acceptance
+    testing found 0 of the prompt's own 6 worked examples resolve against
+    the 17-entry alias table. `tags` is gated to a fixed vocabulary the same
+    prompt enforces, so it is evidence rather than a guess. An analysis
+    counts as unresolved only when BOTH routes miss.
 
     Every analysis block is counted into `stats` whether or not it resolves,
     a paper with no comp_methods block is counted too (`stats`), and a
@@ -560,20 +572,50 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
     # enrich/prompt_templates.py: "### DataTypes ... Comma-separated list"),
     # not semicolon-separated -- verified against the real prompt spec.
     modality = [d.strip() for d in (rec.get("DataTypes") or "").split(",") if d.strip()]
+    # `tags` is CompMethods-level (one list per paper, shared across all of
+    # its analysis blocks), not per-block -- same granularity `body` already
+    # uses below. Unlike `analysis_name`, the Pass 2 prompt gates `tags` to a
+    # fixed vocabulary (prompt_templates.py:1032, "MUST pick from this
+    # list"), so it is a reliable fallback rather than another guess at
+    # free-form phrasing.
+    tags = comp.get("tags") or []
 
     for block in analyses:
         stats.analyses_seen += 1
         raw_name = block.get("analysis_name") or ""
         name = raw_name.strip().lower()
         concept = CONCEPT_ALIASES.get(name)
+
         if concept is None:
-            # An unrecognized analysis name is a LEXICON gap, not an error --
-            # it is exactly the raw material for the next LEXICON.md alias
-            # pass, so it is counted AND logged at INFO, never dropped silently.
+            # analysis_name is free-form (the prompt gives illustrative
+            # examples, not an enum -- Task 11 acceptance found 0/6 of the
+            # prompt's own worked examples resolve), so fall back to the
+            # controlled `tags` vocabulary before giving up. Exact match
+            # only, same as analysis_name: substring matching on free text
+            # would risk routing a paper's evidence to the WRONG concept,
+            # and wrong-concept routing is worse than no routing, because
+            # nothing about it looks broken.
+            for raw_tag in tags:
+                tag_concept = CONCEPT_ALIASES.get(
+                    raw_tag.strip().lower().replace("_", " ")
+                )
+                if tag_concept is not None:
+                    concept = tag_concept
+                    logger.info(
+                        "methods feed: analysis_name %r had no concept, "
+                        "resolved via tag %r -> %s (pmid %s)",
+                        raw_name, raw_tag, concept, rec.get("PMID"),
+                    )
+                    break
+
+        if concept is None:
+            # Neither route resolved -- an unrecognized analysis name AND no
+            # matching tag is a LEXICON gap, not an error, so it is counted
+            # AND logged at INFO, never dropped silently.
             stats.unresolved_names.append(raw_name or "(blank analysis_name)")
             logger.info(
-                "methods feed: no concept for analysis %r (pmid %s)",
-                raw_name, rec.get("PMID"),
+                "methods feed: no concept for analysis %r, tags=%r (pmid %s)",
+                raw_name, tags, rec.get("PMID"),
             )
             continue
         stats.analyses_resolved += 1
