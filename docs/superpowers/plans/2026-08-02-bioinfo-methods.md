@@ -1490,8 +1490,8 @@ def render_borrowed_and_broken(records: list[ReferenceRecord]) -> str:
                 lines.append("- %s  [id: %s]" % (record.body.strip(), record.id))
         else:
             lines.append(
-                "- No adaptation record. This modality has **not audited** "
-                "whether the borrowed method's assumptions hold here."
+                "- No adaptation record. This modality is **not audited** "
+                "for whether the borrowed method's assumptions hold here."
             )
         lines.append("")
 

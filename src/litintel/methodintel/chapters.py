@@ -99,9 +99,9 @@ def render_borrowed_and_broken(records: list[ReferenceRecord]) -> str:
     modalities = sorted({m for r in records for m in r.modality})
     if not modalities:
         lines.append(
-            "- No records for this concept yet. This concept has **not "
-            "audited** any modality: it is an open question, not a clean "
-            "chapter."
+            "- No records for this concept yet. This concept is **not "
+            "audited** for any modality: it is an open question, not a "
+            "clean chapter."
         )
         return "\n".join(lines).rstrip()
 
@@ -119,8 +119,8 @@ def render_borrowed_and_broken(records: list[ReferenceRecord]) -> str:
                 lines.append("- %s  [id: %s]" % (record.body.strip(), record.id))
         else:
             lines.append(
-                "- No adaptation record. This modality has **not audited** "
-                "whether the borrowed method's assumptions hold here."
+                "- No adaptation record. This modality is **not audited** "
+                "for whether the borrowed method's assumptions hold here."
             )
         lines.append("")
 

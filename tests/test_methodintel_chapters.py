@@ -9,6 +9,7 @@ from litintel.methodintel.chapters import (
     render_bibliography,
     render_borrowed_and_broken,
     render_status_table,
+    render_what_changed,
 )
 from litintel.methodintel.records import Citation, ReferenceRecord
 from litintel.methodintel.schema import SourceRef
@@ -161,6 +162,32 @@ def test_assembly_is_byte_identical_across_repeated_calls():
     second = assemble_chapter("clustering", records, prose).encode("utf-8")
 
     assert first == second
+
+
+def test_render_what_changed_with_no_transitions_says_so_exactly():
+    """render_what_changed is public and called directly by Task 8, so it
+    needs its own pinning test, not just indirect coverage via
+    assemble_chapter."""
+    block = render_what_changed([_record("a", kind="benchmark"), _record("b", kind="usage")])
+
+    assert block == "## What changed\n\n- No status transitions recorded yet."
+
+
+def test_render_what_changed_orders_mixed_kinds_by_id():
+    """Only deprecation/adaptation kinds are transitions; benchmark/usage are
+    excluded; order is by record id (chronological), not input order."""
+    block = render_what_changed([
+        _record("2026-08-02-c", kind="benchmark", body="Not a transition."),
+        _record("2026-08-02-b", kind="adaptation", body="Second transition."),
+        _record("2026-08-02-a", kind="deprecation", body="First transition."),
+    ])
+
+    assert "Not a transition." not in block
+    first_index = block.index("First transition.")
+    second_index = block.index("Second transition.")
+    assert first_index < second_index
+    assert "[id: 2026-08-02-a]" in block
+    assert "[id: 2026-08-02-b]" in block
 
 
 def test_what_changed_cites_record_ids_not_numbers():
