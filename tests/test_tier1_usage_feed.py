@@ -14,6 +14,7 @@ a real network call.
 
 import logging
 import os
+import re
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -382,6 +383,58 @@ def test_four_outcomes_reconcile_against_analyses_seen(tmp_path):
     assert len(stats.unresolved_names) == 1
     assert stats.papers_no_comp_methods == 1
     assert stats.papers_eligible == 3
+
+
+# ---------------------------------------------------------------------------
+# Fix round 3: the printed summary line's own numbers must reconcile, not
+# just the underlying stats fields.
+# ---------------------------------------------------------------------------
+
+def test_printed_summary_numbers_reconcile_against_blocks_seen(tmp_path, caplog):
+    """Pins the PROPERTY (written + already-present + unresolved BLOCKS ==
+    blocks seen), not the wording, so a later rewrite of log_summary's
+    string stays safe as long as the arithmetic still holds. Regression for
+    the bug where the line printed the deduped unresolved NAME count instead
+    of the block count, which could read as fewer than blocks seen whenever
+    two unresolved blocks shared one name."""
+    stats = UsageFeedStats()
+
+    # Paper 1: one resolvable block -> one fresh write.
+    _emit_usage_records(tmp_path, _rec(comp_methods={
+        "summary_2to3_sentences": "x",
+        "analyses": [
+            {"analysis_name": "clustering", "steps": [{"step": "Leiden", "tool": "ArchR"}]},
+        ],
+    }), stats)
+
+    # Paper 2: two blocks that both miss CONCEPT_ALIASES under the SAME raw
+    # analysis_name -- two unresolved blocks, one distinct unresolved name.
+    _emit_usage_records(tmp_path, _rec(PMID="55555555", comp_methods={
+        "summary_2to3_sentences": "x",
+        "analyses": [
+            {"analysis_name": "a totally new stage", "steps": []},
+            {"analysis_name": "a totally new stage", "steps": []},
+        ],
+    }), stats)
+
+    # Paper 3: no comp_methods at all -- a paper-level outcome, contributes
+    # zero analysis blocks.
+    _emit_usage_records(tmp_path, _rec(PMID="99999999", comp_methods=None), stats)
+
+    assert len(stats.unresolved_names) == 2
+    assert len(set(stats.unresolved_names)) == 1  # names deduped, blocks did not
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        stats.log_summary()
+    [msg] = [r.message for r in caplog.records if "methods feed:" in r.message]
+
+    seen = int(re.search(r"(\d+) analysis block\(s\) seen", msg).group(1))
+    written = int(re.search(r"(\d+) written", msg).group(1))
+    already_present = int(re.search(r"(\d+) already present", msg).group(1))
+    unresolved_blocks = int(re.search(r"(\d+) unresolved block\(s\)", msg).group(1))
+
+    assert written + already_present + unresolved_blocks == seen
+    assert (written, already_present, unresolved_blocks, seen) == (1, 0, 2, 3)
 
 
 # ---------------------------------------------------------------------------

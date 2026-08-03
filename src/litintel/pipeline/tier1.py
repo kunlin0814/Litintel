@@ -496,18 +496,28 @@ class UsageFeedStats:
     unresolved_names: List[str] = field(default_factory=list)
 
     def log_summary(self) -> None:
+        # `unresolved_names` holds one entry per unresolved BLOCK (duplicate
+        # names included, e.g. two different blocks that both missed under
+        # the same raw analysis_name). Printing only the deduped name count
+        # made this line fail to self-reconcile: written + skipped_existing
+        # + that count could read less than analyses_seen whenever two
+        # blocks shared a name, which looks exactly like a lost block. Print
+        # the raw block count (what the arithmetic needs) and the deduped
+        # name count (what LEXICON.md alias triage acts on) separately, so
+        # the line adds up on its own and the names stay readable.
         unresolved = sorted(set(self.unresolved_names))
         written = self.analyses_resolved - self.skipped_existing
         logger.info(
             "methods feed: %d paper(s) eligible, %d with no comp_methods, "
             "%d analysis block(s) seen, %d resolved (%d written, %d already "
-            "present), %d unresolved analysis name(s)%s",
+            "present), %d unresolved block(s) across %d distinct name(s)%s",
             self.papers_eligible,
             self.papers_no_comp_methods,
             self.analyses_seen,
             self.analyses_resolved,
             written,
             self.skipped_existing,
+            len(self.unresolved_names),
             len(unresolved),
             (": %s" % unresolved) if unresolved else "",
         )
