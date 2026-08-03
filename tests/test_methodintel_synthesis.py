@@ -12,6 +12,7 @@ from litintel.methodintel.synthesis import (
     PROSE_SCHEMA,
     build_prose_prompt,
     generate_chapter,
+    synthesize_prose,
     validate_prose,
 )
 
@@ -82,6 +83,133 @@ def test_prose_schema_declares_all_three_sections_required():
         "tradeoffs",
         "open_questions",
     }
+
+
+# --- Fix round 1, finding 1: heading injection must be rejected, not sanitised ---
+
+
+def test_validate_prose_rejects_a_markdown_heading_in_a_section():
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "## Status\nLouvain is faster.",
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_rejects_a_markdown_heading_with_leading_whitespace():
+    """The reviewer's repro used a leading-# line with no indentation; this
+    confirms an indented heading (still valid Markdown) is caught too."""
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "x",
+            "open_questions": "  # References\nMore text.",
+        })
+
+
+def test_synthesize_prose_rejects_injected_headings_end_to_end():
+    """Reproduces the reviewer's exact finding: prose containing '## References',
+    '## Status' and '## Borrowed and broken' -- fed through the real
+    synthesize_prose -> validate_prose path (with only the network call
+    mocked), it must raise rather than let assemble_chapter render a
+    fabricated heading ahead of the real deterministic section."""
+    from unittest.mock import patch
+
+    malicious_payload = {
+        "recommendation": "## References\nUse Leiden.",
+        "tradeoffs": "## Status\nLouvain is faster.",
+        "open_questions": "## Borrowed and broken\nUnresolved.",
+    }
+
+    with patch(
+        "litintel.enrich.ai_client._call_gemini",
+        return_value=(malicious_payload, {"input": 1}),
+    ), patch("litintel.enrich.ai_client._get_gemini_client", return_value="CLIENT"):
+        with pytest.raises(ValueError, match="heading"):
+            synthesize_prose("clustering", [_record()], "gemini-x", "MEDIUM")
+
+
+# --- Fix round 1, finding 3: an unrecognised key must raise, not be dropped ---
+
+
+def test_validate_prose_rejects_an_unexpected_key():
+    with pytest.raises(ValueError, match="notes"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "x",
+            "open_questions": "y",
+            "notes": "extra",
+        })
+
+
+# --- Fix round 1, finding 2: the non-empty-records production path was untested ---
+
+_RECORD_TEXT = """---
+id: 2026-08-02-traag2019-louvain-connectivity
+concept: clustering
+modality: ["scRNA"]
+methods: ["Leiden"]
+kind: benchmark
+recorded: 2026-08-02
+source_ref:
+  kind: doi
+  value: "10.1038/s41598-019-41695-z"
+citation:
+  first_author: "Traag"
+  journal: "Sci Rep"
+  year: 2019
+confidence: high
+---
+
+Leiden guarantees well-connected communities.
+"""
+
+
+def test_generate_chapter_happy_path_wires_synthesize_prose_and_assembles_chapter(tmp_path):
+    """generate_chapter with NON-empty records was previously untested even
+    with a mock -- the production wiring build_prose_prompt -> synthesize_prose
+    -> assemble_chapter is exercised here for the first time."""
+    from unittest.mock import patch
+
+    methods_root = tmp_path / "bioinfo-methods"
+    shard = methods_root / "references" / "clustering"
+    shard.mkdir(parents=True)
+    (shard / "traag.md").write_text(_RECORD_TEXT)
+
+    fake_payload = {
+        "recommendation": "Use Leiden via leidenalg.",
+        "tradeoffs": "Louvain is faster but less reliably connected.",
+        "open_questions": "Resolution parameter selection is unresolved.",
+    }
+
+    with patch(
+        "litintel.enrich.ai_client._call_gemini",
+        return_value=(fake_payload, {"input": 1}),
+    ) as mock_call, patch(
+        "litintel.enrich.ai_client._get_gemini_client", return_value="FAKE_CLIENT"
+    ):
+        text = generate_chapter(methods_root, "clustering", "gemini-3.6-flash", "HIGH")
+
+    # The model id and thinking level came from config (the arguments passed
+    # in), never from the environment -- this project has been bitten before
+    # by a model silently coming from somewhere other than the YAML.
+    _, kwargs = mock_call.call_args
+    assert kwargs["model"] == "gemini-3.6-flash"
+    assert kwargs["thinking_level"] == "HIGH"
+    assert kwargs["client"] == "FAKE_CLIENT"
+
+    # Prose lands in the right places.
+    assert "Use Leiden via leidenalg." in text
+    assert "Louvain is faster but less reliably connected." in text
+    assert "Resolution parameter selection is unresolved." in text
+
+    # Deterministic sections are present and unaltered.
+    assert "## Status" in text
+    assert "| Leiden | - | scRNA | 2026-08-02 |" in text
+    assert "## References" in text
+    assert "1. Traag. Sci Rep (2019). doi:10.1038/s41598-019-41695-z" in text
+    assert "## Borrowed and broken" in text
 
 
 # --- generate_chapter: known-but-empty concept (Task 4 review requirement) ---

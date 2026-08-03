@@ -7,6 +7,7 @@ actually lives -- sits in one readable place.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from litintel.methodintel.chapters import assemble_chapter
@@ -14,6 +15,13 @@ from litintel.methodintel.records import ReferenceRecord, load_concept_records
 
 
 _SECTIONS = ("recommendation", "tradeoffs", "open_questions")
+
+# A Markdown heading line (leading whitespace allowed) inside model prose.
+# assemble_chapter trusts prose verbatim, so a stray '#' line would render as
+# a second, fabricated heading ahead of the real deterministic section that
+# shares its name -- exactly the corruption the two-layer split exists to
+# prevent (fix round 1, finding 1).
+_HEADING_LINE = re.compile(r"^\s*#")
 
 # Gemini runs in JSON mode here (ai_client._call_gemini is JSON-only), so the
 # section split is enforced by the schema rather than by parsing labelled text.
@@ -30,7 +38,10 @@ PROSE_SCHEMA: dict = {
 _SYSTEM_PROMPT = (
     "You write chapters for a curated bioinformatics method knowledge base. "
     "You write ASCII only and you never assert anything the supplied records "
-    "do not support."
+    "do not support. You never emit Markdown headings -- no line may start "
+    "with '#', with or without leading whitespace -- because your prose is "
+    "inserted directly into a chapter that already has its own headings; "
+    "write plain prose paragraphs only."
 )
 
 _PROMPT_HEADER = """You are writing one chapter of a curated bioinformatics
@@ -79,17 +90,43 @@ def build_prose_prompt(concept: str, records: list[ReferenceRecord]) -> str:
 
 
 def validate_prose(payload: dict) -> dict[str, str]:
-    """Check the model's JSON object. Raises on a missing or empty section.
+    """Check the model's JSON object. Raises on anything short of clean prose.
 
     Empty is rejected because assemble_chapter would otherwise emit a heading
     with nothing under it, which reads as "nothing to say here" rather than as
     the generation failure it is.
+
+    A Markdown heading line inside a section is rejected, never escaped or
+    stripped (fix round 1, finding 1): assemble_chapter inserts prose
+    verbatim, so a model-emitted '#' line would render as a second,
+    fabricated heading ahead of the real deterministic section sharing its
+    name -- the one thing the two-layer split (chapters.py vs. this module)
+    exists to prevent. Chapters are Layer 2 and regenerate on command (spec
+    D5), so failing loud here costs one re-run, not a corrupted chapter.
+
+    An unrecognised key is also rejected -- same fail-loud posture as
+    records.py's `extra="forbid"`. PROSE_SCHEMA already constrains what the
+    model may return; an extra key means schema drift or the model ignoring
+    the schema, and either should surface rather than pass through silently.
     """
+    unexpected = set(payload) - set(_SECTIONS)
+    if unexpected:
+        raise ValueError(
+            "model response has unexpected key(s): %s" % ", ".join(sorted(unexpected))
+        )
+
     prose = {}
     for section in _SECTIONS:
         value = payload.get(section)
         if not isinstance(value, str) or not value.strip():
             raise ValueError("model response is missing or empty section %s" % section)
+        for line in value.splitlines():
+            if _HEADING_LINE.match(line):
+                raise ValueError(
+                    "model response section %s contains a Markdown heading "
+                    "line %r -- prose must not emit headings"
+                    % (section, line.strip())
+                )
         prose[section] = value.strip()
 
     return prose
