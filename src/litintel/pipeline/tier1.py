@@ -529,6 +529,20 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
     prompt enforces, so it is evidence rather than a guess. An analysis
     counts as unresolved only when BOTH routes miss.
 
+    The `tags` fallback fires ONLY when it is unambiguous (Task 11 fix round
+    2): exactly one analysis block in the paper missed `analysis_name`, AND
+    the paper's `tags` name exactly one known concept. `tags` is
+    CompMethods-level -- one shared list per paper, not per block -- so if
+    two blocks both miss `analysis_name`, or `tags` itself names two or more
+    concepts, there is no way to know which block a shared tag actually
+    describes. Applying the fallback anyway (round 1's shape) filed a CNV
+    block under `clustering` merely because the SAME PAPER also did
+    clustering elsewhere -- a wrong record that looks exactly like a right
+    one, the same failure mode substring matching was already rejected for
+    (see round 1). Ambiguous cases are counted as unresolved and logged with
+    a distinct message from a plain no-match, so the owner can tell "found
+    nothing" apart from "found a candidate, could not attribute it safely".
+
     Every analysis block is counted into `stats` whether or not it resolves,
     a paper with no comp_methods block is counted too (`stats`), and a
     collision skip (record already exists from an earlier run today) is
@@ -580,44 +594,74 @@ def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStat
     # free-form phrasing.
     tags = comp.get("tags") or []
 
+    # Pass 1: resolve every block against analysis_name alone. `tags` is
+    # paper-level, so whether its fallback applies at all can only be
+    # decided after every block's analysis_name outcome is known.
+    name_hits = []
+    name_misses = []
     for block in analyses:
         stats.analyses_seen += 1
         raw_name = block.get("analysis_name") or ""
-        name = raw_name.strip().lower()
-        concept = CONCEPT_ALIASES.get(name)
+        concept = CONCEPT_ALIASES.get(raw_name.strip().lower())
+        if concept is not None:
+            name_hits.append((block, concept))
+        else:
+            name_misses.append(block)
 
-        if concept is None:
-            # analysis_name is free-form (the prompt gives illustrative
-            # examples, not an enum -- Task 11 acceptance found 0/6 of the
-            # prompt's own worked examples resolve), so fall back to the
-            # controlled `tags` vocabulary before giving up. Exact match
-            # only, same as analysis_name: substring matching on free text
-            # would risk routing a paper's evidence to the WRONG concept,
-            # and wrong-concept routing is worse than no routing, because
-            # nothing about it looks broken.
-            for raw_tag in tags:
-                tag_concept = CONCEPT_ALIASES.get(
-                    raw_tag.strip().lower().replace("_", " ")
-                )
-                if tag_concept is not None:
-                    concept = tag_concept
-                    logger.info(
-                        "methods feed: analysis_name %r had no concept, "
-                        "resolved via tag %r -> %s (pmid %s)",
-                        raw_name, raw_tag, concept, rec.get("PMID"),
-                    )
-                    break
+    # The unique concepts the paper's controlled `tags` resolve to, computed
+    # once (not per block) since `tags` is shared across every block.
+    tag_concepts = sorted({
+        c for c in (
+            CONCEPT_ALIASES.get(raw_tag.strip().lower().replace("_", " "))
+            for raw_tag in tags
+        )
+        if c is not None
+    })
 
-        if concept is None:
-            # Neither route resolved -- an unrecognized analysis name AND no
-            # matching tag is a LEXICON gap, not an error, so it is counted
-            # AND logged at INFO, never dropped silently.
-            stats.unresolved_names.append(raw_name or "(blank analysis_name)")
+    resolved = list(name_hits)
+
+    if len(name_misses) == 1 and len(tag_concepts) == 1:
+        # Unambiguous: one block needs a concept, tags name exactly one --
+        # safe to attribute the shared tag to the one block missing a
+        # name-based match.
+        fallback_block = name_misses[0]
+        fallback_concept = tag_concepts[0]
+        resolved.append((fallback_block, fallback_concept))
+        logger.info(
+            "methods feed: analysis_name %r had no concept, resolved via "
+            "tag fallback -> %s (pmid %s)",
+            fallback_block.get("analysis_name") or "", fallback_concept,
+            rec.get("PMID"),
+        )
+        name_misses = []
+    elif name_misses and tag_concepts:
+        # Ambiguous in either direction: 2+ blocks compete for a tag-derived
+        # concept, or tags themselves name 2+ concepts. Guessing would
+        # attribute one block's evidence to a DIFFERENT block's concept, so
+        # none of them resolve -- logged distinctly from a plain no-match
+        # (below) because candidates existed here, they just could not be
+        # attributed safely.
+        logger.info(
+            "methods feed: ambiguous tag fallback: %d unresolved block(s), "
+            "%d candidate concept(s) %s (pmid %s)",
+            len(name_misses), len(tag_concepts), tag_concepts, rec.get("PMID"),
+        )
+
+    for block in name_misses:
+        raw_name = block.get("analysis_name") or ""
+        # Every still-unresolved block is counted as the exact same
+        # LEXICON-gap raw material regardless of reason -- only the log
+        # line distinguishes "no candidate at all" from the ambiguous
+        # summary already logged above, so the two failure modes never
+        # print the same message for the same block.
+        stats.unresolved_names.append(raw_name or "(blank analysis_name)")
+        if not tag_concepts:
             logger.info(
                 "methods feed: no concept for analysis %r, tags=%r (pmid %s)",
                 raw_name, tags, rec.get("PMID"),
             )
-            continue
+
+    for block, concept in resolved:
         stats.analyses_resolved += 1
 
         steps = block.get("steps") or []

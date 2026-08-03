@@ -164,6 +164,100 @@ def test_analysis_name_miss_resolves_via_tags_fallback(tmp_path, caplog):
 
 
 # ---------------------------------------------------------------------------
+# Task 11 fix round 2: the tags fallback must refuse to guess when ambiguous
+# ---------------------------------------------------------------------------
+
+def test_two_unresolved_blocks_with_one_tag_concept_stay_unresolved(tmp_path, caplog):
+    """`tags` is paper-level, shared across every block. If TWO blocks both
+    miss analysis_name, a single tag-derived concept cannot be attributed to
+    either one safely -- both must stay unresolved, nothing gets written, and
+    the ambiguity is logged distinctly from a plain no-match."""
+    rec = _rec(comp_methods={
+        "summary_2to3_sentences": "x",
+        "tags": ["clustering"],
+        "analyses": [
+            {"analysis_name": "CNV inference and validation", "steps": []},
+            {"analysis_name": "Single-cell preprocessing and integration", "steps": []},
+        ],
+    })
+    stats = UsageFeedStats()
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        _emit_usage_records(tmp_path, rec, stats)
+
+    assert stats.analyses_seen == 2
+    assert stats.analyses_resolved == 0
+    assert sorted(stats.unresolved_names) == sorted([
+        "CNV inference and validation",
+        "Single-cell preprocessing and integration",
+    ])
+    assert not (tmp_path / "references").exists() or not list((tmp_path / "references").rglob("*.md"))
+    assert any(
+        "ambiguous tag fallback" in r.message and r.levelname == "INFO"
+        for r in caplog.records
+    )
+
+
+def test_tags_naming_two_concepts_stays_unresolved(tmp_path, caplog):
+    """A single unresolved block is not enough on its own -- if the paper's
+    `tags` name TWO known concepts, which one the block actually is about is
+    unknowable, so it must stay unresolved rather than guess either one."""
+    rec = _rec(comp_methods={
+        "summary_2to3_sentences": "x",
+        "tags": ["clustering", "normalization"],
+        "analyses": [
+            {"analysis_name": "Single-cell preprocessing and integration", "steps": []},
+        ],
+    })
+    stats = UsageFeedStats()
+
+    with caplog.at_level(logging.INFO, logger="litintel.pipeline.tier1"):
+        _emit_usage_records(tmp_path, rec, stats)
+
+    assert stats.analyses_seen == 1
+    assert stats.analyses_resolved == 0
+    assert stats.unresolved_names == ["Single-cell preprocessing and integration"]
+    assert not (tmp_path / "references").exists() or not list((tmp_path / "references").rglob("*.md"))
+    assert any(
+        "ambiguous tag fallback" in r.message and r.levelname == "INFO"
+        for r in caplog.records
+    )
+
+
+def test_four_outcomes_reconcile_with_ambiguous_case_in_the_mix(tmp_path):
+    """The same reconciliation invariant as
+    test_four_outcomes_reconcile_against_analyses_seen, but with an ambiguous
+    tag-fallback paper mixed in -- an ambiguous block is not a fifth,
+    unaccounted-for outcome, it is counted as unresolved like any other."""
+    stats = UsageFeedStats()
+
+    # Paper 1: one block resolves by analysis_name alone, one fresh write.
+    _emit_usage_records(tmp_path, _rec(comp_methods={
+        "summary_2to3_sentences": "x",
+        "analyses": [
+            {"analysis_name": "clustering", "steps": [{"step": "Leiden", "tool": "ArchR"}]},
+        ],
+    }), stats)
+
+    # Paper 2: two blocks miss analysis_name, tags name exactly one concept
+    # -- ambiguous (2+ blocks competing for it), both stay unresolved.
+    _emit_usage_records(tmp_path, _rec(PMID="55555555", comp_methods={
+        "summary_2to3_sentences": "x",
+        "tags": ["clustering"],
+        "analyses": [
+            {"analysis_name": "Block A", "steps": []},
+            {"analysis_name": "Block B", "steps": []},
+        ],
+    }), stats)
+
+    written = stats.analyses_resolved - stats.skipped_existing
+    assert stats.analyses_seen == written + stats.skipped_existing + len(stats.unresolved_names)
+    assert written == 1
+    assert stats.skipped_existing == 0
+    assert len(stats.unresolved_names) == 2
+
+
+# ---------------------------------------------------------------------------
 # Silent zero-yield case 2: empty/missing comp_methods is counted, not raised
 # ---------------------------------------------------------------------------
 
