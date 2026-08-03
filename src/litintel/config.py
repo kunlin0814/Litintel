@@ -134,6 +134,10 @@ class AppConfig(BaseModel):
     dedup: DedupConfig
     tier_c: Optional[TierCConfig] = None
     rag_agent: RagAgentConfig = Field(default_factory=RagAgentConfig)
+    # Path to the bioinfo-methods knowledge base (a directory in the dotfiles
+    # repo). Litintel WRITES records here and never commits -- the human commits
+    # in dotfiles, which is the review gate. None disables the methods feed.
+    methods_repo_path: Optional[str] = None
 
 def load_config_from_yaml(path: str) -> AppConfig:
     import yaml
