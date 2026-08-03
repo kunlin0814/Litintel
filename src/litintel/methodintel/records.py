@@ -52,18 +52,6 @@ class Citation(BaseModel):
     year: int
 
 
-class _StrictSourceRef(SourceRef):
-    """SourceRef with unknown keys forbidden, local to record parsing.
-
-    schema.py::SourceRef itself is left untouched -- its other consumers
-    (EvidenceClaim, MethodGraphEdge) are outside this task's surgical scope
-    and may not want this strictness. Subclassing only adds the extra="forbid"
-    check that a hand-written frontmatter block needs; no fields are added.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class ReferenceRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -81,7 +69,7 @@ class ReferenceRecord(BaseModel):
     # the int 1. Frontmatter is machine-strict by design (spec D8); a typo'd
     # quote should fail loud, not pass as if it were the same value.
     seed_rung: Optional[int] = Field(default=None, strict=True)
-    source_ref: _StrictSourceRef
+    source_ref: SourceRef
     citation: Optional[Citation] = None
     confidence: str
     body: str

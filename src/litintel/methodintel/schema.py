@@ -2,7 +2,7 @@ from datetime import date
 from enum import Enum
 from typing import ClassVar, Dict, List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RouterMode(str, Enum):
@@ -89,7 +89,16 @@ class SourceRefKind(str, Enum):
 
 
 class SourceRef(BaseModel):
-    """Typed pointer to the evidence supporting a single claim."""
+    """Typed pointer to the evidence supporting a single claim.
+
+    extra="forbid": a typo'd frontmatter key inside source_ref must raise, not
+    be silently dropped -- Task 4 needed this and stopgapped it as
+    records.py::_StrictSourceRef because schema.py was outside that task's
+    scope; Task 6 owns schema.py and applies it here directly (audit in
+    task-6-report.md confirmed no existing caller passes an extra key).
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     kind: SourceRefKind
     value: str
@@ -173,6 +182,19 @@ class MethodGraphEdge(BaseModel):
         "contradicted_by",
         "deprecated_by",
         "sensitive_to",
+        # Concept history. A concept that splits or merges must leave a trace,
+        # or the chapter set's own evolution becomes unauditable (spec 3.4.2).
+        "split_into",
+        "merged_from",
+        # Mechanism is a relation, not a key. Two methods can share machinery
+        # while sitting in different chapters because nobody chooses between
+        # them -- keying chapters on mechanism would group those and split the
+        # pairs users actually compare (spec 3.4.2).
+        "shares_mechanism_with",
+        # Cross-modality borrowing. A young field inherits its methods from the
+        # nearest mature one; the edge records where a method came from so the
+        # adaptation records hang off something (spec 3.4.4).
+        "adapted_from",
     })
 
     @model_validator(mode="after")

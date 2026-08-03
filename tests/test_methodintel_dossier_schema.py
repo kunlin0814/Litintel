@@ -104,3 +104,20 @@ def test_method_graph_edge_requires_known_edge_type():
 
     with pytest.raises(ValidationError):
         MethodGraphEdge(src="Leiden", dst="Louvain", edge_type="frobnicates")
+
+
+@pytest.mark.parametrize("edge_type", [
+    "split_into",
+    "merged_from",
+    "shares_mechanism_with",
+    "adapted_from",
+])
+def test_new_edge_types_are_allowed(edge_type):
+    """Concept history (split/merge), the mechanism relation, and cross-modality
+    borrowing are unrepresentable without these -- see spec 3.4.2 and 3.4.4."""
+    assert edge_type in MethodGraphEdge.ALLOWED_EDGE_TYPES
+
+
+def test_existing_edge_types_are_untouched():
+    for edge_type in ("competes_with", "replaces_or_modernizes", "deprecated_by"):
+        assert edge_type in MethodGraphEdge.ALLOWED_EDGE_TYPES
