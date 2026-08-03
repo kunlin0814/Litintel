@@ -24,7 +24,16 @@ _SECTIONS = ("recommendation", "tradeoffs", "open_questions")
 # section sharing its name -- the corruption the two-layer split exists to
 # prevent.
 _ATX_HEADING = re.compile(r"^\s*#")
-_HTML_HEADING = re.compile(r"<h[1-6][^>]*>", re.IGNORECASE)
+# Deliberately BROAD: any '<h1'..'<h6' or '</h1'..'</h6' anywhere on a line,
+# whatever follows it. The earlier precise form (`<h[1-6][^>]*>`) required the
+# '>' on the same line, so '<h2\n>Status</h2>' -- which a CommonMark renderer
+# turns into a real <h2>, because '<h2' at end of line opens an HTML block --
+# walked straight through. That precise rule leaked twice, so the shape of the
+# rule is the defect, not the pattern inside it: match the tag NAME and stop
+# reasoning about tag syntax. The false-positive cost is ~nil -- prose about
+# computational methods has no reason to contain '<h2' outside a code example,
+# and code examples are inside a fence, where no heading check runs at all.
+_HTML_HEADING = re.compile(r"</?h[1-6]", re.IGNORECASE)
 # Setext underline: 0-3 leading spaces (CommonMark's own allowance -- 4+
 # leading spaces makes it an indented code block, not a heading, so the cap
 # is load-bearing, not cosmetic; fix round 3 finding 5), then a line of only
@@ -142,6 +151,17 @@ def validate_prose(payload: dict) -> dict[str, str]:
     or opening the section, is a legitimate horizontal rule/divider and must
     stay legal prose.
 
+    The HTML rule is deliberately the BROAD one (fix round 5): any '<h1'
+    through '<h6' or '</h1' through '</h6' on a line, whatever follows it,
+    rather than a pattern that models tag syntax. Two rounds of precise
+    patterns each leaked a shape nobody had listed -- most recently
+    '<h2\\n>Status</h2>', which a renderer turns into a real <h2> because
+    '<h2' at end of line opens a CommonMark HTML block. Matching the tag name
+    and refusing to reason further is what makes the rule stop leaking, and
+    it costs nothing: an HTML heading tag has no legitimate place in prose,
+    and the one real case for writing one -- documenting HTML in a code
+    example -- lives inside a fence, where no heading check runs.
+
     No heading check applies inside a fenced code block (fix round 3,
     finding 6): a dash line in a code example is ordinary prose about
     computational methods, not a heading, and over-rejecting it would
@@ -226,8 +246,8 @@ def validate_prose(payload: dict) -> dict[str, str]:
                 )
             if _HTML_HEADING.search(line):
                 raise ValueError(
-                    "model response section %s contains an HTML heading "
-                    "line %r -- prose must not emit headings"
+                    "model response section %s contains an HTML heading tag "
+                    "on line %r -- prose must not emit headings"
                     % (section, line.strip())
                 )
             if _SETEXT_UNDERLINE.match(line) and text_above:

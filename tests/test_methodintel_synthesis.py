@@ -474,6 +474,81 @@ def test_validate_prose_allows_nested_indented_list_items():
     assert "    - igraph backend" in prose["tradeoffs"]
 
 
+# --- Fix round 5: the HTML heading rule is broadened to the whole family ---
+#
+# Rounds 2 and 4 each used a pattern that modelled tag SYNTAX
+# (`<h[1-6][^>]*>`), which requires the '>' on the same line. Both times a
+# shape nobody had enumerated walked through -- most recently '<h2\n>', which
+# a CommonMark renderer turns into a real <h2> because '<h2' at end of line
+# opens an HTML block. The rule now matches the tag NAME anywhere on a line
+# ('<h1'..'<h6' or '</h1'..'</h6', case-insensitive) and reasons no further.
+# Prose has no legitimate use for an HTML heading tag; the one real case,
+# documenting HTML inside a code example, sits in a fence where no heading
+# check runs at all.
+
+
+@pytest.mark.parametrize(
+    "label, text",
+    [
+        ("plain open tag", "<h2>Status</h2>\nMore."),
+        ("uppercase", "<H2>Status</H2>\nMore."),
+        ("attributes", '<h2 class="x" id="s">Status</h2>\nMore.'),
+        ("split tag", "<h2\n>Status</h2>\nMore."),
+        ("split tag with attributes", '<h2\n  class="x">Status</h2>\nMore.'),
+        ("closing tag alone on its line", "Status\n</h2>\nMore."),
+        ("indented open tag", "   <h3>Status</h3>\nMore."),
+        ("indented split tag", "   <h3\n>Status</h3>\nMore."),
+        ("h1", "<h1>Status</h1>\nMore."),
+        ("h6", "<h6>Status</h6>\nMore."),
+        ("whitespace inside the tag", "<h2 >Status</h2>\nMore."),
+        ("tag mid-sentence", "See <h2>Status</h2> above.\nMore."),
+    ],
+)
+def test_validate_prose_rejects_every_html_heading_tag_shape(label, text):
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": text,
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_allows_an_html_heading_inside_a_backtick_fence():
+    """The fence exemption applies to HTML exactly as it does to '## Status':
+    someone documenting HTML in a code example is a real case, and the tag is
+    code content there, not a heading."""
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Render it as:\n```html\n<h2>Status</h2>\n</h2>\n```\nDone.",
+        "open_questions": "x",
+    })
+
+    assert "<h2>Status</h2>" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_an_html_heading_inside_a_tilde_fence():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Render it as:\n~~~\n<h2\n>Status</h2>\n~~~\nDone.",
+        "open_questions": "x",
+    })
+
+    assert "<h2" in prose["tradeoffs"]
+
+
+def test_validate_prose_still_allows_prose_with_no_html_heading_tag():
+    """The broad rule keys on '<h' + a digit, so ordinary prose -- other
+    tags, and bare comparison operators -- is untouched."""
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Leiden scales when n<half the cells, and hclust is slower.",
+        "open_questions": "Is <b>resolution</b> stable? See harmony too.",
+    })
+
+    assert "n<half" in prose["tradeoffs"]
+    assert "<b>resolution</b>" in prose["open_questions"]
+
+
 # --- Fix round 1, finding 3: an unrecognised key must raise, not be dropped ---
 
 
