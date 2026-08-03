@@ -43,6 +43,7 @@ tuning problem.
 |---|---|---|
 | D1 | The taxonomy is **seeded from the field's own maps** -- reviews, tool docs, benchmarks -- not from keyword search and not from the analyst's memory | Both alternatives fail on unknown unknowns. A keyword sweep cannot return a method you cannot name; enumerating "top-down from the stage list" only moves the same blind spot from PubMed into the analyst's head. Reviews and tutorial indices are enumerations *already written by people who know the whole field*. See section 3.4. |
 | D1a | Keyword retrieval is retained, scoped to **evidence for an already-named `(concept, method)` pair** | "scRNA clustering" is noise; "Leiden connectivity guarantee, benchmark" is precise. `source_plan.py` keeps its job, but stops deciding what exists. |
+| D1b | The seed source is chosen by **field maturity, on a three-rung ladder** (consensus review -> benchmark/landscape review -> high-impact flagship method papers), and every seed record carries its rung | Spatial is too new for anyone to credibly claim best practice. A forced best-practice seed would encode one group's opinion as settled consensus. Recording the rung keeps a provisional chapter visibly provisional. See section 3.4. |
 | D2 | Knowledge lives in **`dotfiles`**, code stays in **`Litintel`** | Clean split: knowledge is universal and must outlive the pipeline; code is PCa-scoped. `dotfiles` is already a separate repo, so this satisfies the repo-separation goal without a new repo. |
 | D3 | **Git is the source of truth. Notion is a view.** | The requirement is a traceable history of what changed and why. `git log -p` is exactly that, for free, diffable and offline. Notion page history is time-limited, not diffable, and not agent-queryable. `storage/notion.py` also truncates every text property to 2000 chars, which method chapters will exceed immediately. |
 | D4 | **Two layers**: curated evidence (append-only) -> synthesized chapters (derived) | Derived-and-committed chapters make the change log automatic and guarantee the synthesis cannot drift from its evidence. |
@@ -173,11 +174,40 @@ publishes.** Enumeration is a reading problem, not a search problem.
 | Benchmarking papers | competing methods inside one stage | "do I know all the options for this stage?" |
 | Ecosystem release notes (scverse, Bioconductor, package changelogs) | what changed since the last check | "what appeared this year?" -- deterministic, no LLM required |
 
-A review's **section headings are the stage taxonomy.** Candidate anchors for
-single-cell: Luecken & Theis 2019 (Mol Syst Biol) and Heumos et al. 2023 (Nat
-Rev Genet, best practices across modalities). Spatial has equivalents not yet
-identified. `# VERIFY: confirm exact citations and current spatial equivalents
-before any of them is written into a chapter.`
+A review's **section headings are the stage taxonomy.** Confirmed anchors for
+single-cell, verified against PubMed on 2026-08-02:
+
+- Luecken MD, Theis FJ. *Current best practices in single-cell RNA-seq analysis:
+  a tutorial.* Mol Syst Biol 2019;15(6):e8746. PMID 31217225,
+  doi:10.15252/msb.20188746. Open access (PMC6582955).
+- Heumos L, Schaar AC, ..., Theis FJ. *Best practices for single-cell analysis
+  across modalities.* Nat Rev Genet 2023;24(8):550-572. PMID 37002403,
+  doi:10.1038/s41576-023-00586-w. Open access (PMC10066026). Covers scATAC,
+  CITE-seq, immune receptor and spatial modalities alongside scRNA.
+
+**Seed quality degrades with field age, so the seeding rule has rungs (D1b).**
+A consensus best-practice review exists for scRNA-seq because the field is a
+decade old. Spatial transcriptomics is not, spatial ATAC is younger still, and a
+paper claiming "best practice" for either would be asserting a consensus that
+does not exist. Forcing one would seed the taxonomy from a single group's
+opinion while labelling it settled -- the exact failure this design exists to
+avoid. So the seed source is chosen by what the field can actually support:
+
+| Rung | Seed source | Use when |
+|---|---|---|
+| 1 | Consensus best-practice review | The field has one. Confirmed for scRNA-seq. |
+| 2 | Benchmark or methods-landscape review | No consensus, but the option space has been surveyed. |
+| 3 | High-impact flagship method papers, taxonomy read from their stage-structured methods sections | Neither exists. Journals: Nature, Nat Genet, Nat Med, Nat Methods, Nat Biotechnol, Cell, Cell Rep. |
+
+Every seed record carries its rung, so a chapter built from rung 3 is visibly
+provisional rather than silently equal to a rung 1 chapter. This mirrors the
+established-methods ladder in `institution/core/00-core-directives.md` section C,
+applied to seeds instead of methods. Rung 3 is the *expected* case for spatial
+and it is not a defect -- the design records what the field supports, and
+"no consensus yet" is itself a durable fact worth recording.
+
+`# VERIFY: spatial transcriptomics and spatial ATAC seed papers -- searches in`
+`flight 2026-08-02, no citation written into a chapter until confirmed.`
 
 Precedent already in this repo family: `skills/bioinfo-code/references/ArchR/`
 mirrors the ArchR manual's chapter structure. That is this move, applied one
@@ -188,9 +218,12 @@ level down -- taking a map someone else already drew.
 Completeness cannot be proven. It can be made **auditable**, which is the
 strongest available claim:
 
-- **Between stages.** Take the newest best-practice review's section list. Diff
-  it against `chapters/`. The delta is the blind spot, named. Run on major
-  review publication, roughly every 12-18 months.
+- **Between stages.** Take the newest field map available at the highest rung
+  the modality supports (D1b) and diff its section list against `chapters/`. The
+  delta is the blind spot, named. Run on major review publication, roughly every
+  12-18 months. Where the modality sits at rung 3 the audit input is a *set* of
+  flagship papers rather than one review, so the diff is against the union of
+  their methods-section headings -- weaker, and honestly so.
 - **Within a stage.** Diff a benchmark paper's method table against that
   chapter's status table. The delta is the missing option set.
 
@@ -407,10 +440,11 @@ than asserted.
 <!-- references/clustering/2026-08-02-traag2019-louvain-connectivity.md -->
 ---
 id: 2026-08-02-traag2019-louvain-connectivity
-stage: clustering
+concept: clustering      # null is legal and preferred over a guess (3.4.2)
 methods: ["Louvain", "Leiden"]
-kind: benchmark          # benchmark | usage | deprecation | best_practice | personal
+kind: benchmark          # benchmark | usage | deprecation | best_practice | personal | seed
 recorded: 2026-08-02
+seed_rung: null          # 1 | 2 | 3, REQUIRED when kind is seed (D1b), null otherwise
 source_ref:
   kind: doi              # pmid | doi | url | docs_url | github_url | personal_obs
   value: "10.1038/s41598-019-41695-z"
@@ -658,8 +692,9 @@ Explicitly deferred until a real chapter proves the need:
 - [ ] Tier 1 emits at least one `usage` record into `references/` on a real run.
 - [ ] A status change is demonstrable as a `git diff` on the chapter.
 - [ ] The concept list in `INDEX.md` was seeded from a named review's section
-      headings (D1 / 3.4), and that review is recorded as a reference record so
-      the next coverage audit has a baseline to diff against.
+      headings (D1 / 3.4), and that review is recorded as a `kind: seed` record
+      carrying its `seed_rung` (D1b) so the next coverage audit has a baseline to
+      diff against.
 - [ ] `LEXICON.md` exists and holds at least one `seen` term with a **null**
       concept -- proving the design can hold a term it does not yet understand.
 - [ ] At least one concept carries **two or more labels**, demonstrating that a
@@ -676,14 +711,15 @@ Explicitly deferred until a real chapter proves the need:
 
 ## 9. Open questions
 
-1. **Stage taxonomy -- the one blocking item.** *Method* is now settled (D1 /
-   3.4: seed from a review's section headings, not from memory), but the
-   *source* is not chosen. Needs: one named single-cell best-practice review
-   and one spatial equivalent, current as of 2026.
-   `# VERIFY: confirm Luecken & Theis 2019 (Mol Syst Biol) and Heumos et al.
-   2023 (Nat Rev Genet) exist as cited, and identify the spatial counterpart --
-   none is confirmed yet.` `docs/methodintel_plan.md:480` supplies five
-   candidate stages, which is a starting overlap to diff against, not the list.
+1. **Concept taxonomy -- partially resolved 2026-08-02.** *Method* settled at
+   D1 / 3.4; *rung selection* settled at D1b. The single-cell source is now
+   confirmed against PubMed: Luecken & Theis 2019 (PMID 31217225) and Heumos et
+   al. 2023 (PMID 37002403), both rung 1, both open access.
+   Still open: the spatial transcriptomics and spatial ATAC seeds, expected at
+   rung 2 or 3 rather than rung 1.
+   `# VERIFY: spatial seeds -- searches in flight, nothing written until`
+   `confirmed.` `docs/methodintel_plan.md:480` supplies five candidate stages,
+   which is a starting overlap to diff against, not the list.
 2. **Coverage-audit cadence.** 3.4.1 proposes running the between-stage diff on
    major review publication (~12-18 months). Whether that is manual, or a
    `staleness_check` invocation, is undecided.
