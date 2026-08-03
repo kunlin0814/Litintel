@@ -102,11 +102,29 @@ Where the records disagree by modality, say so rather than averaging them. A
 method that is standard for scRNA may be untested for spatial ATAC, and that
 distinction is the most valuable thing this chapter carries.
 
+A record's `modality` list is a hard boundary on every attribute it carries,
+including `implementations` and `methods`: an implementation or method named
+on a record applies ONLY to that record's own modality list, never to a
+modality the record does not list. Never attach an implementation named on a
+spatial-only record (for example Squidpy or Scanpy on a record scoped to
+spatial_rna/spatial_atac) to a sentence about scRNA or scATAC, or to a
+sentence that spans all modalities, unless a DIFFERENT record actually names
+that implementation for that modality too. When one sentence must cover
+several modalities and their implementation evidence differs, either name the
+implementation per modality (e.g. "for scRNA ...; for spatial data, Squidpy or
+Scanpy ...") or drop implementation specifics from the modality-general
+sentence entirely and let the modality-specific sentence carry them. A
+composite sentence that is true of the world but not backed by any single
+record's stated modality scope is exactly the unsupported claim this prompt
+already forbids.
+
 Return a JSON object with exactly these three string fields:
 
   recommendation  -- one method, one implementation, one sentence, plus at most
                      three sentences of justification. Name the method AND the
                      package; "use Squidpy" without naming the method is wrong.
+                     If the implementation differs by modality, say so per
+                     modality rather than naming one implementation for all.
   tradeoffs       -- when each option becomes the better choice and what it costs.
   open_questions  -- what these records leave unresolved.
 
@@ -273,6 +291,66 @@ def validate_prose(payload: dict) -> dict[str, str]:
     return prose
 
 
+# Sentence boundary for _check_prose_is_cited: a '.', '!' or '?' followed by
+# whitespace. Not a real sentence parser (an "e.g." or a decimal would split
+# wrong), which is an accepted gap (Task 9, fix round 1, finding 2) -- this
+# lint only needs to catch a bare, unmarked sentence, not parse English.
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
+
+
+def _check_prose_is_cited(prose: dict[str, str]) -> None:
+    """Cheap post-validation lint: every prose sentence must carry [id: ...].
+
+    The prompt only REQUESTS a citation on every claim; nothing enforced it,
+    and Task 9's own generation shipped an opening recommendation sentence
+    with no marker on the first attempt (caught only by an eyeball read).
+    This closes that gap deterministically rather than relying on review to
+    catch it every time.
+
+    Deliberately NOT folded into validate_prose(): that function's own test
+    suite exercises many marker-free fixtures to isolate the heading/fence/
+    ASCII checks in isolation, and requiring a citation there would force
+    every one of those fixtures to carry a marker for a property they are
+    not testing. This runs once, after validate_prose has already passed,
+    against real model output only.
+
+    Fenced code blocks are skipped (same fence tracking as validate_prose):
+    a code example has no claim to cite. Lines are joined with a space
+    before sentence-splitting, not concatenated by newline, so a sentence
+    the model wrapped across two lines is not mistaken for two sentences,
+    one of which would then look unmarked.
+    """
+    for section, text in prose.items():
+        kept_lines = []
+        open_fence = ""
+        for line in text.splitlines():
+            if open_fence:
+                closing = _FENCE_CLOSE.match(line)
+                if closing:
+                    marker = closing.group("marker")
+                    if marker[0] == open_fence[0] and len(marker) >= len(open_fence):
+                        open_fence = ""
+                continue
+
+            opening = _FENCE_OPEN.match(line)
+            if opening:
+                open_fence = opening.group("marker")
+                continue
+
+            kept_lines.append(line)
+
+        flattened = " ".join(kept_lines)
+        for sentence in _SENTENCE_BOUNDARY.split(flattened):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if "[id:" not in sentence:
+                raise ValueError(
+                    "%s: sentence has no [id: ...] citation marker: %r"
+                    % (section, sentence)
+                )
+
+
 def synthesize_prose(
     concept: str,
     records: list[ReferenceRecord],
@@ -294,7 +372,9 @@ def synthesize_prose(
         schema=PROSE_SCHEMA,
         thinking_level=thinking,
     )
-    return validate_prose(payload)
+    prose = validate_prose(payload)
+    _check_prose_is_cited(prose)
+    return prose
 
 
 # Used only when a KNOWN concept (validated by the caller against LEXICON.md)

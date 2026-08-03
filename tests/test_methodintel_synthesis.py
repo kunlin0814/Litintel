@@ -10,6 +10,7 @@ from litintel.methodintel.records import Citation, ReferenceRecord
 from litintel.methodintel.schema import SourceRef
 from litintel.methodintel.synthesis import (
     PROSE_SCHEMA,
+    _check_prose_is_cited,
     build_prose_prompt,
     generate_chapter,
     synthesize_prose,
@@ -562,6 +563,96 @@ def test_validate_prose_rejects_an_unexpected_key():
         })
 
 
+# --- Task 9 fix round 1, finding 2: a citation lint enforced in code, not
+# only requested in the prompt. Reproduces the exact defect an eyeball
+# review caught once: an opening sentence with no [id: ...] marker while its
+# neighbours carried one.
+
+
+def test_check_prose_is_cited_passes_when_every_sentence_has_a_marker():
+    """Marker sits BEFORE the terminal period, matching real generated
+    prose (e.g. '... communities [id: traag2019].'), not after it -- that
+    placement is what keeps the marker inside the same sentence chunk once
+    split on sentence-ending punctuation."""
+    _check_prose_is_cited({
+        "recommendation": (
+            "Use Leiden [id: a]. It guarantees connectivity [id: a]."
+        ),
+        "tradeoffs": "Louvain is faster [id: b].",
+        "open_questions": "Resolution selection is unresolved [id: a].",
+    })
+
+
+def test_check_prose_is_cited_raises_on_the_historical_defect_shape():
+    """The exact shape that shipped once: a topic sentence with no marker,
+    directly followed by a cited sentence in the same paragraph."""
+    with pytest.raises(ValueError, match=r"\[id: \.\.\.\] citation marker"):
+        _check_prose_is_cited({
+            "recommendation": (
+                "Use the Leiden method implemented in Scanpy. "
+                "Leiden guarantees well-connected communities [id: a]."
+            ),
+            "tradeoffs": "Louvain is faster [id: b].",
+            "open_questions": "Resolution selection is unresolved [id: a].",
+        })
+
+
+def test_check_prose_is_cited_names_the_offending_section_and_sentence():
+    with pytest.raises(ValueError) as excinfo:
+        _check_prose_is_cited({
+            "recommendation": "Use Leiden [id: a].",
+            "tradeoffs": "Louvain is a legacy choice.",
+            "open_questions": "Resolution selection [id: a].",
+        })
+
+    assert "tradeoffs" in str(excinfo.value)
+    assert "Louvain is a legacy choice." in str(excinfo.value)
+
+
+def test_check_prose_is_cited_allows_a_sentence_wrapped_across_two_lines():
+    """A sentence the model happened to wrap at a line break is still one
+    sentence with one trailing marker, not two sentences where the first
+    looks unmarked."""
+    _check_prose_is_cited({
+        "recommendation": (
+            "Leiden guarantees well-connected communities across every\n"
+            "modality studied here [id: a]."
+        ),
+        "tradeoffs": "x [id: a].",
+        "open_questions": "y [id: a].",
+    })
+
+
+def test_check_prose_is_cited_skips_fenced_code_blocks():
+    """A code example has no claim to cite, same fence tracking as
+    validate_prose."""
+    _check_prose_is_cited({
+        "recommendation": "Use Leiden [id: a].",
+        "tradeoffs": "Example:\n```\nsc.tl.leiden(adata)\nno marker here\n```\nSee above [id: a].",
+        "open_questions": "x [id: a].",
+    })
+
+
+def test_synthesize_prose_rejects_an_uncited_sentence_end_to_end():
+    """The lint wired into the real pipeline: a payload that passes
+    validate_prose (clean ASCII, no headings, closed fences) but leaves one
+    sentence uncited must still be rejected by synthesize_prose."""
+    from unittest.mock import patch
+
+    payload = {
+        "recommendation": "Use the Leiden method implemented in Scanpy.",
+        "tradeoffs": "Louvain is faster [id: a].",
+        "open_questions": "Resolution selection is unresolved [id: a].",
+    }
+
+    with patch(
+        "litintel.enrich.ai_client._call_gemini",
+        return_value=(payload, {"input": 1}),
+    ), patch("litintel.enrich.ai_client._get_gemini_client", return_value="CLIENT"):
+        with pytest.raises(ValueError, match="citation marker"):
+            synthesize_prose("clustering", [_record()], "gemini-x", "MEDIUM")
+
+
 # --- Fix round 1, finding 2: the non-empty-records production path was untested ---
 
 _RECORD_TEXT = """---
@@ -596,10 +687,24 @@ def test_generate_chapter_happy_path_wires_synthesize_prose_and_assembles_chapte
     shard.mkdir(parents=True)
     (shard / "traag.md").write_text(_RECORD_TEXT)
 
+    # Each sentence carries its own [id: ...] marker, placed before the
+    # terminal period the way real generated prose does (fix round 1,
+    # finding 2 added _check_prose_is_cited(), which now runs on every
+    # synthesize_prose call and would otherwise reject this fixture as
+    # uncited).
     fake_payload = {
-        "recommendation": "Use Leiden via leidenalg.",
-        "tradeoffs": "Louvain is faster but less reliably connected.",
-        "open_questions": "Resolution parameter selection is unresolved.",
+        "recommendation": (
+            "Use Leiden via leidenalg "
+            "[id: 2026-08-02-traag2019-louvain-connectivity]."
+        ),
+        "tradeoffs": (
+            "Louvain is faster but less reliably connected "
+            "[id: 2026-08-02-traag2019-louvain-connectivity]."
+        ),
+        "open_questions": (
+            "Resolution parameter selection is unresolved "
+            "[id: 2026-08-02-traag2019-louvain-connectivity]."
+        ),
     }
 
     # Sentinel values, not real model/thinking ids: fix round 2 finding 2. A
@@ -633,9 +738,9 @@ def test_generate_chapter_happy_path_wires_synthesize_prose_and_assembles_chapte
     assert kwargs["client"] == "FAKE_CLIENT"
 
     # Prose lands in the right places.
-    assert "Use Leiden via leidenalg." in text
-    assert "Louvain is faster but less reliably connected." in text
-    assert "Resolution parameter selection is unresolved." in text
+    assert "Use Leiden via leidenalg" in text
+    assert "Louvain is faster but less reliably connected" in text
+    assert "Resolution parameter selection is unresolved" in text
 
     # Deterministic sections are present and unaltered.
     assert "## Status" in text
