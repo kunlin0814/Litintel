@@ -2,6 +2,8 @@ import logging
 import os
 import time
 import yaml
+from dataclasses import dataclass, field
+from datetime import date
 from typing import List, Dict, Any
 
 from litintel.config import AppConfig
@@ -424,6 +426,26 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
         except Exception as e:
             logger.error(f"RAG corpus sync failed: {e}")
 
+    # Usage feed (spec 4.1, feed 4): record which methods a high-scoring paper
+    # actually used. Lagging signal -- it confirms adoption, it never discovers
+    # a method. Guarded so Litintel keeps working with no knowledge base, and
+    # counted so an unresolved analysis name or an empty comp_methods block is
+    # visible at the end of the run instead of silently yielding zero records.
+    methods_root = None
+    if config.methods_repo_path:
+        from litintel.methodintel.records import RecordError, resolve_methods_root
+        try:
+            methods_root = resolve_methods_root(config.methods_repo_path)
+        except RecordError as exc:
+            logger.warning("methods feed: disabled this run: %s", exc)
+
+    if methods_root:
+        usage_stats = UsageFeedStats()
+        for rec in valid_records:
+            if int(rec.get("RelevanceScore", 0) or 0) >= config.ai.pass2_min_score:
+                _emit_usage_records(methods_root, rec, usage_stats)
+        usage_stats.log_summary()
+
     # Log execution
     append_run_log(
         config_dict=config.model_dump(),
@@ -437,3 +459,134 @@ def run_tier1_pipeline(config: AppConfig, limit: int = None):
     )
 
     logger.info("Tier 1 Pipeline Complete.")
+
+
+def _first_author_surname(authors: str) -> str:
+    """'Smith J; Doe A' or 'Smith J, Doe A' -> 'Smith'. Best effort, never raises."""
+    head = (authors or "").replace(";", ",").split(",")[0].strip()
+    return head.split()[0] if head else "unknown"
+
+
+@dataclass
+class UsageFeedStats:
+    """Run-level counters for the usage feed (Task 10).
+
+    Silent zero-yield is the failure this design exists to prevent: a paper
+    contributing nothing to the knowledge base, with nobody told. These
+    counters make both ways that happens visible -- `papers_no_comp_methods`
+    (an empty/missing Pass 2 extraction) and `unresolved_names` (an
+    analysis_name that CONCEPT_ALIASES does not recognize, which is also the
+    exact raw material for the next LEXICON.md alias pass). `log_summary()` is
+    the one place a person reads these back after a run.
+    """
+    papers_eligible: int = 0
+    papers_no_comp_methods: int = 0
+    analyses_seen: int = 0
+    analyses_resolved: int = 0
+    unresolved_names: List[str] = field(default_factory=list)
+
+    def log_summary(self) -> None:
+        unresolved = sorted(set(self.unresolved_names))
+        logger.info(
+            "methods feed: %d paper(s) eligible, %d with no comp_methods, "
+            "%d analysis block(s) seen, %d resolved to a concept, "
+            "%d unresolved analysis name(s)%s",
+            self.papers_eligible,
+            self.papers_no_comp_methods,
+            self.analyses_seen,
+            self.analyses_resolved,
+            len(unresolved),
+            (": %s" % unresolved) if unresolved else "",
+        )
+
+
+def _emit_usage_records(methods_root, rec: Dict[str, Any], stats: "UsageFeedStats") -> None:
+    """One usage record per analysis block whose concept we recognize.
+
+    A paper contributes to several concepts at once -- an scRNA study does
+    clustering AND normalization AND annotation -- so this emits one record per
+    resolvable analysis rather than picking a single winner.
+
+    Every analysis block is counted into `stats` whether or not it resolves,
+    and a paper with no comp_methods block is counted too (`stats`), so the
+    two silent-zero-yield paths (unresolved analysis name; empty/missing
+    comp_methods) are visible in `UsageFeedStats.log_summary()` rather than
+    disappearing as a bare skip.
+
+    Never raises into the pipeline run: an unwritable knowledge base must not
+    fail a literature run whose real outputs are Notion and Drive.
+    """
+    from litintel.methodintel.records import Citation
+    from litintel.methodintel.router import (
+        CONCEPT_ALIASES,
+        IMPLEMENTATION_ALIASES,
+        METHOD_ALIASES,
+    )
+    from litintel.methodintel.writer import write_usage_record
+
+    stats.papers_eligible += 1
+
+    comp = rec.get("comp_methods") or {}
+    analyses = comp.get("analyses") or []
+    if not analyses:
+        stats.papers_no_comp_methods += 1
+        logger.info(
+            "methods feed: PMID %s scored >= pass2_min_score but comp_methods "
+            "has no analyses -- 0 usage records this run (empty Pass 2 "
+            "extraction, or the upstream PMC methods section came back empty)",
+            rec.get("PMID"),
+        )
+        return
+
+    year_raw = (rec.get("Year") or "").strip()
+    citation = Citation(
+        first_author=_first_author_surname(rec.get("Authors", "")),
+        journal=rec.get("Journal") or "unknown",
+        year=int(year_raw) if year_raw.isdigit() else 0,
+    )
+    # DataTypes is a comma-separated controlled vocabulary (see
+    # enrich/prompt_templates.py: "### DataTypes ... Comma-separated list"),
+    # not semicolon-separated -- verified against the real prompt spec.
+    modality = [d.strip() for d in (rec.get("DataTypes") or "").split(",") if d.strip()]
+
+    for block in analyses:
+        stats.analyses_seen += 1
+        raw_name = block.get("analysis_name") or ""
+        name = raw_name.strip().lower()
+        concept = CONCEPT_ALIASES.get(name)
+        if concept is None:
+            # An unrecognized analysis name is a LEXICON gap, not an error --
+            # it is exactly the raw material for the next LEXICON.md alias
+            # pass, so it is counted AND logged at INFO, never dropped silently.
+            stats.unresolved_names.append(raw_name or "(blank analysis_name)")
+            logger.info(
+                "methods feed: no concept for analysis %r (pmid %s)",
+                raw_name, rec.get("PMID"),
+            )
+            continue
+        stats.analyses_resolved += 1
+
+        steps = block.get("steps") or []
+        text = " ".join(
+            "%s %s" % (s.get("step", ""), s.get("tool", "")) for s in steps
+        ).lower()
+        methods = sorted({v for k, v in METHOD_ALIASES.items() if k in text})
+        implementations = sorted(
+            {v for k, v in IMPLEMENTATION_ALIASES.items() if k in text}
+        )
+
+        try:
+            write_usage_record(
+                methods_root,
+                concept=concept,
+                methods=methods,
+                implementations=implementations,
+                modality=modality,
+                pmid=str(rec["PMID"]),
+                citation=citation,
+                body=(comp.get("summary_2to3_sentences") or "").strip()
+                     or "Methods extracted by Pass 2.",
+                recorded=date.today(),
+            )
+        except OSError as exc:
+            logger.warning("methods feed: could not write record: %s", exc)
