@@ -166,21 +166,28 @@ def test_validate_prose_rejects_non_ascii_content():
     """Fix round 2, finding 4: ASCII compliance must not depend on the model
     choosing to comply -- this also disposes of the fullwidth '##' and
     Unicode-lookalike-letter bypasses the re-reviewer flagged as harmless
-    Markdown but which are non-ASCII regardless."""
+    Markdown but which are non-ASCII regardless.
+
+    The fixture uses \\uXXXX escapes (fix round 3, finding 7) rather than a
+    literal non-ASCII byte in the source, so this test file itself stays
+    pure ASCII while the runtime string value is identical either way.
+    """
+    fullwidth_hash = "\uff03"  # FULLWIDTH NUMBER SIGN, not ASCII '#'
     with pytest.raises(ValueError, match="non-ASCII"):
         validate_prose({
             "recommendation": "Use Leiden.",
-            "tradeoffs": "＃＃ Status\nLouvain is faster.",  # fullwidth '##'
+            "tradeoffs": "%s%s Status\nLouvain is faster." % (fullwidth_hash, fullwidth_hash),
             "open_questions": "x",
         })
 
 
 def test_validate_prose_rejects_a_unicode_lookalike_letter():
+    capital_omicron = "\u039f"  # GREEK CAPITAL LETTER OMICRON, not Latin "O"
     with pytest.raises(ValueError, match="non-ASCII"):
         validate_prose({
             "recommendation": "Use Leiden.",
             "tradeoffs": "x",
-            "open_questions": "Οpen question: resolution selection.",  # capital Omicron, not "O"
+            "open_questions": "%spen question: resolution selection." % capital_omicron,
         })
 
 
@@ -196,6 +203,82 @@ def test_validate_prose_allows_a_horizontal_rule_after_a_blank_line():
 
     assert "---" in prose["recommendation"]
     assert "---" in prose["tradeoffs"]
+
+
+# --- Fix round 3, findings 5 and 6: leading-space setext bypass, and
+# fenced-code-block over-rejection. Both are one change (fence tracking plus
+# a 0-3 leading-space allowance on the setext underline), so their tests sit
+# together: one positive case proves the bypass is closed, and the negative
+# cases prove ordinary prose (lists, tables, code blocks) still passes --
+# only the negative cases would have caught finding 6, since every prior
+# test in this file was a positive (rejection) case.
+
+
+def test_validate_prose_rejects_an_indented_setext_underline():
+    """Finding 5: CommonMark allows 0-3 leading spaces on a setext underline
+    and still renders a real heading -- the round-2 regex had no allowance
+    for that whitespace at all, so an indented '-----' slipped through."""
+    with pytest.raises(ValueError, match="heading"):
+        validate_prose({
+            "recommendation": "Use Leiden.",
+            "tradeoffs": "Status\n   -----\nLouvain is faster.",
+            "open_questions": "x",
+        })
+
+
+def test_validate_prose_allows_a_bullet_list():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Options:\n- Leiden\n- Louvain\n- Walktrap",
+        "open_questions": "x",
+    })
+
+    assert "- Leiden" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_markdown_table_separator_row():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "| Method | Speed |\n|---|---|\n| Leiden | slow |",
+        "open_questions": "x",
+    })
+
+    assert "|---|---|" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_dash_line_inside_a_fenced_code_block():
+    """Finding 6: this is the over-rejection case. Without fence tracking, the
+    round-2 checker read '----' as a setext underline for the fence-open line
+    above it and hard-failed on an entirely ordinary code example."""
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example output:\n```\nHeader\n----\nrow1  row2\n```\nSee above.",
+        "open_questions": "x",
+    })
+
+    assert "----" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_tilde_fenced_code_block():
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Example output:\n~~~\nHeader\n----\nrow1  row2\n~~~\nSee above.",
+        "open_questions": "x",
+    })
+
+    assert "----" in prose["tradeoffs"]
+
+
+def test_validate_prose_allows_a_four_space_indented_dash_line():
+    """A 4+ space indent makes this an indented code block per CommonMark,
+    not a setext underline (which only permits 0-3 leading spaces)."""
+    prose = validate_prose({
+        "recommendation": "Use Leiden.",
+        "tradeoffs": "Status\n    -----\nLouvain is faster.",
+        "open_questions": "x",
+    })
+
+    assert "    -----" in prose["tradeoffs"]
 
 
 # --- Fix round 1, finding 3: an unrecognised key must raise, not be dropped ---

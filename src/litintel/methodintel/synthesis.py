@@ -25,13 +25,22 @@ _SECTIONS = ("recommendation", "tradeoffs", "open_questions")
 # prevent.
 _ATX_HEADING = re.compile(r"^\s*#")
 _HTML_HEADING = re.compile(r"<h[1-6][^>]*>", re.IGNORECASE)
-# Setext underline: a line of only '=' or only '-' characters. Whether it is
-# a heading underline or a legitimate horizontal rule/prose divider depends
-# entirely on what precedes it -- caught only when it directly follows a
-# non-blank text line (checked at the call site, not in this regex), per the
-# re-reviewer's precise instruction not to break a `---` that opens a section
-# or follows a blank line.
-_SETEXT_UNDERLINE = re.compile(r"^(=+|-+)\s*$")
+# Setext underline: 0-3 leading spaces (CommonMark's own allowance -- 4+
+# leading spaces makes it an indented code block, not a heading, so the cap
+# is load-bearing, not cosmetic; fix round 3 finding 5), then a line of only
+# '=' or only '-' characters. Whether it is a heading underline or a
+# legitimate horizontal rule/prose divider depends entirely on what precedes
+# it -- caught only when it directly follows a non-blank text line (checked
+# at the call site, not in this regex), and never inside a fenced code block
+# (also checked at the call site; fix round 3 finding 6).
+_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
+# A fenced code block delimiter, opening or closing: 0-3 leading spaces then
+# 3+ backticks or 3+ tildes (CommonMark). Toggled as a simple on/off flag
+# while scanning a section's lines -- this project takes no new dependency,
+# so there is no real Markdown parser backing this; it is a hand-rolled
+# approximation good enough to keep code examples in prose from being
+# mistaken for headings, which is all `validate_prose` needs.
+_FENCE_MARKER = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 # Gemini runs in JSON mode here (ai_client._call_gemini is JSON-only), so the
 # section split is enforced by the schema rather than by parsing labelled text.
@@ -116,10 +125,18 @@ def validate_prose(payload: dict) -> dict[str, str]:
     sharing its name -- the one thing the two-layer split (chapters.py vs.
     this module) exists to prevent. Chapters are Layer 2 and regenerate on
     command (spec D5), so failing loud here costs one re-run, not a
-    corrupted chapter. A setext underline (a line of only '=' or only '-')
-    is flagged ONLY when it directly follows a non-blank text line -- the
-    same line following a blank line, or opening the section, is a
-    legitimate horizontal rule/divider and must stay legal prose.
+    corrupted chapter. A setext underline (a line of only '=' or only '-',
+    with 0-3 leading spaces per CommonMark) is flagged ONLY when it directly
+    follows a non-blank text line -- the same line following a blank line,
+    or opening the section, is a legitimate horizontal rule/divider and must
+    stay legal prose.
+
+    Neither the ATX nor the setext check applies inside a fenced code block
+    (fix round 3, finding 6): a dash line in a code example is ordinary
+    prose about computational methods, not a heading, and over-rejecting it
+    would hard-fail chapter generation on entirely normal content -- worse
+    than the bypass it would be closing, since the bypass needs the model to
+    misbehave while this would fire on correct output.
 
     Non-ASCII content is rejected (fix round 2, finding 4): the system
     prompt asks for ASCII, but this project's ASCII-only rule does not get
@@ -156,7 +173,14 @@ def validate_prose(payload: dict) -> dict[str, str]:
             )
 
         lines = value.splitlines()
+        in_fence = False
         for index, line in enumerate(lines):
+            if _FENCE_MARKER.match(line):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+
             if _ATX_HEADING.match(line):
                 raise ValueError(
                     "model response section %s contains an ATX heading "
