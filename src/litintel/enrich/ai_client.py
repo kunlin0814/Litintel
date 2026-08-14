@@ -853,7 +853,10 @@ def enrich_pass2_methods(
     
     from litintel.enrich.prompt_templates import _TIER1_PCA_METHODS_INSTRUCTION
     methods_system_prompt = _TIER1_PCA_METHODS_INSTRUCTION
-    methods_model = getattr(config, 'pass2_model', config.model_escalate)
+    if hasattr(config, "resolve_pass2_model"):
+        methods_model = config.resolve_pass2_model()
+    else:
+        methods_model = getattr(config, 'pass2_model', config.model_escalate)
     
     # Construct Methods-Specific User Prompt (Methods + Results sections)
     methods_user_prompt = f"PMID: {pmid}\nAnalyze these sections for computational methods:\n\n"
@@ -869,7 +872,10 @@ def enrich_pass2_methods(
             methods_json, m_usage = _call_openai(client, methods_model, methods_system_prompt, methods_user_prompt, {})
         elif provider == AIProvider.GEMINI:
             client = _get_gemini_client()
-            pass2_thinking = getattr(config, 'pass2_thinking', None) or 'LOW'
+            if hasattr(config, "resolve_pass2_thinking"):
+                pass2_thinking = config.resolve_pass2_thinking()
+            else:
+                pass2_thinking = getattr(config, 'pass2_thinking', None) or 'HIGH'
             logger.info(f"PMID {pmid} [Pass 2] Methods extraction with Gemini {methods_model} (Thinking={pass2_thinking})...")
             methods_json, m_usage = _call_gemini(client, methods_model, methods_system_prompt, methods_user_prompt, {}, thinking_level=pass2_thinking)
         else:

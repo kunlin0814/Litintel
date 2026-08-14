@@ -4,7 +4,7 @@ Two-step approach:
   1. Retrieve relevant chunks from Vertex AI RAG Engine (requires gcloud auth)
   2. Generate answer with Gemini via Developer API (uses GOOGLE_API_KEY)
 
-This lets us use gemini-3.6-flash (available on Developer API)
+This lets us use gemini-3.7-flash (available on Developer API)
 while still querying the Vertex AI RAG corpus.
 
 Usage:
@@ -31,6 +31,8 @@ from google import genai
 from google.genai import types
 from vertexai.preview import rag
 
+from litintel.constants import DEFAULT_GEMINI_MODEL
+
 # -----------------------------------------------------------------------
 # Config
 #   Models and tuning knobs come from configs/*.yaml (rag_agent block).
@@ -46,7 +48,7 @@ CORPUS_NAME = os.environ.get('VERTEX_RAG_CORPUS_NAME', '')
 # access safe for anything that imports this module without calling main().
 RAG_CFG = None
 LOCATION = 'us-east5'
-MODEL = 'gemini-3.6-flash'
+MODEL = DEFAULT_GEMINI_MODEL
 
 SYSTEM_INSTRUCTION = """\
 You are LitIntel Assistant, a computational biology research agent.

@@ -15,6 +15,7 @@ from typing import Optional, Tuple
 import requests
 from pydantic import ValidationError
 
+from litintel.constants import DEFAULT_GEMINI_MODEL
 from litintel.enrich.ai_client import _call_gemini_multimodal, _get_gemini_client
 from litintel.pubmed.client import _ncbi_params
 from litintel.tierc.pdf_io import build_multimodal_parts, split_pdf_by_pages
@@ -44,7 +45,7 @@ def _first_page_pdf(pdf_bytes: bytes) -> bytes:
 
 def extract_identity_from_pdf(
     pdf_bytes: bytes,
-    model: str = "gemini-3.6-flash",
+    model: str = DEFAULT_GEMINI_MODEL,
     thinking: str = "LOW",
 ) -> Identity:
     """Run a single multimodal call on page 1 of the PDF to extract Identity.
@@ -155,7 +156,7 @@ def _is_real(value: Optional[str]) -> bool:
 
 def resolve_identity(
     pdf_bytes: bytes,
-    model: str = "gemini-3.6-flash",
+    model: str = DEFAULT_GEMINI_MODEL,
 ) -> Tuple[Identity, str]:
     """End-to-end identity resolution for a manual-inbox PDF.
 

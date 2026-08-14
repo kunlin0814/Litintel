@@ -708,7 +708,7 @@ def test_generate_chapter_happy_path_wires_synthesize_prose_and_assembles_chapte
     }
 
     # Sentinel values, not real model/thinking ids: fix round 2 finding 2. A
-    # real model name (e.g. "gemini-3.6-flash") is also a plausible hardcode
+    # real model name (e.g. "gemini-3.7-flash") is also a plausible hardcode
     # inside synthesize_prose, so asserting on it would still pass against a
     # version that ignores the arguments and hardcodes that same literal (as
     # the re-reviewer demonstrated). These sentinels cannot coincide with any

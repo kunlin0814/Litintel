@@ -107,17 +107,34 @@ ai:
   provider: gemini
   # This file is the ONLY source of truth for models and thinking effort.
   # There are no environment-variable overrides -- edit the values here.
-  model_default: "gemini-3.6-flash"
-  model_escalate: "gemini-3.6-flash"
-  # Two-Pass Architecture Config (same models as PCa)
-  pass1_model_fulltext: "gemini-3.6-flash"
-  pass1_thinking_fulltext: "HIGH"
-  pass1_model_abstract: "gemini-3.6-flash"
-  pass1_thinking_abstract: "MEDIUM"
-  pass2_model: "gemini-3.6-flash"
-  pass2_thinking: "HIGH"
-  pass2_min_score: 88
+  model_default: "gemini-3.7-flash"
+  thinking_default: "MEDIUM"
 
+  # Task-driven configuration: model and thinking effort per task
+  tasks:
+    pass1_fulltext:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+    pass1_abstract:
+      model: "gemini-3.7-flash"
+      thinking: "MEDIUM"
+    pass2_methods:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+    tier_c_engine:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+    tier_c_identity:
+      model: "gemini-3.7-flash"
+      thinking: "LOW"
+    rag_agent:
+      model: "gemini-3.7-flash"
+      thinking: "MEDIUM"
+    escalation:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+
+  pass2_min_score: 88
   max_chars: 80000
   prompt_template: "tier1_plasticity"
   escalation_triggers:
@@ -154,7 +171,7 @@ dedup:
 # Resource IDs (VERTEX_RAG_CORPUS_NAME, GCP_PROJECT_ID) stay in .env -- they are
 # deployment credentials. Every model / tuning knob is here.
 rag_agent:
-  model: "gemini-3.6-flash"
+  model: "gemini-3.7-flash"
   thinking: "LOW"                  # NONE | LOW | MEDIUM | HIGH
   location: "us-east5"             # Vertex location for LLM inference
   top_k: 10                        # RAG chunks retrieved per question

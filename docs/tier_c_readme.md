@@ -27,7 +27,7 @@ Both paths write the same artifact shape and Notion fields.
 
 ## Three-stage engine
 
-All three stages use the `tier_c.model` from `configs/*.yaml` (currently `gemini-3.6-flash`)
+All three stages use the `tier_c.model` from `configs/*.yaml` (currently `gemini-3.7-flash`)
 with multimodal (Stage 1) or text-only input.
 
 ```
@@ -212,7 +212,7 @@ Check that:
 ```yaml
 tier_c:
   enabled: true          # set false to disable globally
-  model: "gemini-3.6-flash"
+  model: "gemini-3.7-flash"
   thinking: "MEDIUM"
   min_score: 90          # only auto-path papers >= this get Tier C
   inbox_folder_id_env: "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"
@@ -221,7 +221,7 @@ tier_c:
   max_size_mb: 18.0      # PDFs above this are chunked
   chunk_pages: 25        # pages per chunk
   max_chunks: 4          # cap at 4 chunks (~100 pages total)
-  identity_model: "gemini-3.6-flash"  # cheap model for page-1 identity
+  identity_model: "gemini-3.7-flash"  # cheap model for page-1 identity
 ```
 
 To disable Tier C entirely without editing the yaml: set `enabled: false` or remove

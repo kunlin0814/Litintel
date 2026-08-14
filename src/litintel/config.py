@@ -3,6 +3,12 @@ from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
+from litintel.constants import (
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_THINKING_LEVEL,
+    DEFAULT_ESCALATE_MODEL,
+)
+
 logger = logging.getLogger(__name__)
 
 class PipelineTier(int, Enum):
@@ -44,13 +50,35 @@ class EscalationTriggersConfig(BaseModel):
     # Behavior
     retry_on_error: bool = True
 
+
+class TaskConfig(BaseModel):
+    """Task-specific model and thinking effort configuration."""
+    model: Optional[str] = None
+    thinking: Optional[str] = None
+
+
+class TasksConfig(BaseModel):
+    """Task-driven registry for all pipeline and enrichment stages."""
+    pass1_fulltext: TaskConfig = Field(default_factory=lambda: TaskConfig(thinking="HIGH"))
+    pass1_abstract: TaskConfig = Field(default_factory=lambda: TaskConfig(thinking="MEDIUM"))
+    pass2_methods: TaskConfig = Field(default_factory=lambda: TaskConfig(thinking="HIGH"))
+    tier_c_engine: TaskConfig = Field(default_factory=lambda: TaskConfig(thinking="HIGH"))
+    tier_c_identity: TaskConfig = Field(default_factory=lambda: TaskConfig(thinking="LOW"))
+    rag_agent: TaskConfig = Field(default_factory=lambda: TaskConfig(thinking="MEDIUM"))
+    escalation: TaskConfig = Field(default_factory=lambda: TaskConfig(thinking="HIGH"))
+
+
 class AIConfig(BaseModel):
     provider: AIProvider
-    # Legacy / Default Single-Pass Fields (Optional now)
-    model_default: Optional[str] = "gpt-5-nano"
-    model_escalate: Optional[str] = "gpt-5-mini"
-    
-    # Two-Pass Architecture Fields
+    # Base defaults
+    model_default: str = DEFAULT_GEMINI_MODEL
+    thinking_default: str = DEFAULT_THINKING_LEVEL
+    model_escalate: Optional[str] = None
+
+    # Task-driven configuration block
+    tasks: TasksConfig = Field(default_factory=TasksConfig)
+
+    # Legacy / Direct stage fields (kept for backward compatibility & explicit overrides)
     pass1_model_fulltext: Optional[str] = None
     pass1_thinking_fulltext: Optional[str] = None
     pass1_model_abstract: Optional[str] = None
@@ -58,14 +86,48 @@ class AIConfig(BaseModel):
     pass2_model: Optional[str] = None
     pass2_thinking: Optional[str] = None
     pass2_min_score: int = 88
-    
+
     max_chars: int = 80000
     prompt_template: str
     escalation_triggers: Optional[EscalationTriggersConfig] = None
 
+    def get_task_model(self, task_name: str) -> str:
+        """Resolve model for a specific task with hierarchical fallback."""
+        task_cfg = getattr(self.tasks, task_name, None)
+        if task_cfg and task_cfg.model:
+            return task_cfg.model
+        return self.model_default
+
+    def get_task_thinking(self, task_name: str) -> str:
+        """Resolve thinking level for a specific task with hierarchical fallback."""
+        task_cfg = getattr(self.tasks, task_name, None)
+        if task_cfg and task_cfg.thinking:
+            return task_cfg.thinking
+        return self.thinking_default
+
+    def resolve_pass1_model_fulltext(self) -> str:
+        return self.pass1_model_fulltext or self.get_task_model("pass1_fulltext")
+
+    def resolve_pass1_thinking_fulltext(self) -> str:
+        return self.pass1_thinking_fulltext or self.get_task_thinking("pass1_fulltext")
+
+    def resolve_pass1_model_abstract(self) -> str:
+        return self.pass1_model_abstract or self.get_task_model("pass1_abstract")
+
+    def resolve_pass1_thinking_abstract(self) -> str:
+        return self.pass1_thinking_abstract or self.get_task_thinking("pass1_abstract")
+
+    def resolve_pass2_model(self) -> str:
+        return self.pass2_model or self.get_task_model("pass2_methods")
+
+    def resolve_pass2_thinking(self) -> str:
+        return self.pass2_thinking or self.get_task_thinking("pass2_methods")
+
+
 class NotionConfig(BaseModel):
     enabled: bool = False
     database_id_env: str
+
 
 class DriveConfig(BaseModel):
     enabled: bool = False
@@ -79,13 +141,16 @@ class DriveConfig(BaseModel):
     pdf_folder_name: str = "PDFs"
     pdf_folder_id_env: Optional[str] = None
 
+
 class MarkdownBundleConfig(BaseModel):
     enabled: bool = False
     output_dir: Optional[str] = None
 
+
 class CsvConfig(BaseModel):
     enabled: bool = True
     filename: str
+
 
 class StorageConfig(BaseModel):
     notion: Optional[NotionConfig] = None
@@ -93,14 +158,16 @@ class StorageConfig(BaseModel):
     markdown_bundle: Optional[MarkdownBundleConfig] = None
     csv: Optional[CsvConfig] = None
 
+
 class DedupConfig(BaseModel):
     keys: List[str] = ["DOI", "PMID"]
+
 
 class TierCConfig(BaseModel):
     """Tier C (figure-grounded multimodal PDF enrichment) settings."""
     enabled: bool = False
-    model: str = "gemini-3.1-pro-preview"
-    thinking: str = "MEDIUM"
+    model: str = DEFAULT_GEMINI_MODEL
+    thinking: str = "HIGH"
     min_score: int = 90
     inbox_folder_id_env: str = "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"
     output_folder_id_env: str = "GOOGLE_DRIVE_TIERC_OUTPUT_FOLDER_ID"
@@ -108,7 +175,8 @@ class TierCConfig(BaseModel):
     max_size_mb: float = 18.0
     chunk_pages: int = 25
     max_chunks: int = 4
-    identity_model: str = "gemini-3.6-flash"
+    identity_model: str = DEFAULT_GEMINI_MODEL
+
 
 class RagAgentConfig(BaseModel):
     """Vertex RAG corpus sync + the natural-language query agent (agent/cli.py).
@@ -116,8 +184,8 @@ class RagAgentConfig(BaseModel):
     Resource identifiers (corpus name, GCP project) stay in .env because they are
     deployment credentials; every model and tuning knob lives here.
     """
-    model: str = "gemini-3.6-flash"
-    thinking: str = "LOW"
+    model: str = DEFAULT_GEMINI_MODEL
+    thinking: str = "MEDIUM"
     location: str = "us-east5"
     top_k: int = 10
     vector_distance_threshold: float = 0.5
@@ -139,6 +207,7 @@ class AppConfig(BaseModel):
     # in dotfiles, which is the review gate. None disables the methods feed.
     methods_repo_path: Optional[str] = None
 
+
 def load_config_from_yaml(path: str) -> AppConfig:
     import yaml
     from dotenv import load_dotenv
@@ -153,6 +222,22 @@ def load_config_from_yaml(path: str) -> AppConfig:
     # Env vars deliberately do NOT override it -- a silent env override made the
     # committed config unreliable to read. Change models by editing configs/*.yaml.
     cfg = AppConfig(**raw)
+
+    # Ensure backward-compatible properties are hydrated from tasks
+    if not cfg.ai.pass1_model_fulltext:
+        cfg.ai.pass1_model_fulltext = cfg.ai.resolve_pass1_model_fulltext()
+    if not cfg.ai.pass1_thinking_fulltext:
+        cfg.ai.pass1_thinking_fulltext = cfg.ai.resolve_pass1_thinking_fulltext()
+    if not cfg.ai.pass1_model_abstract:
+        cfg.ai.pass1_model_abstract = cfg.ai.resolve_pass1_model_abstract()
+    if not cfg.ai.pass1_thinking_abstract:
+        cfg.ai.pass1_thinking_abstract = cfg.ai.resolve_pass1_thinking_abstract()
+    if not cfg.ai.pass2_model:
+        cfg.ai.pass2_model = cfg.ai.resolve_pass2_model()
+    if not cfg.ai.pass2_thinking:
+        cfg.ai.pass2_thinking = cfg.ai.resolve_pass2_thinking()
+    if not cfg.ai.model_escalate:
+        cfg.ai.model_escalate = cfg.ai.get_task_model("escalation")
 
     logger.info(
         "Config %s -- pass1: %s/%s (fulltext) %s/%s (abstract) | pass2: %s/%s | escalate: %s",
@@ -174,5 +259,6 @@ def load_config_from_yaml(path: str) -> AppConfig:
     )
 
     return cfg
+
 
 

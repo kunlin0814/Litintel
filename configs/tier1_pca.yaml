@@ -39,17 +39,34 @@ ai:
   provider: gemini
   # This file is the ONLY source of truth for models and thinking effort.
   # There are no environment-variable overrides -- edit the values here.
-  model_default: "gemini-3.6-flash"          # Pass 1 fallback + run-log ai_model
-  model_escalate: "gemini-3.6-flash"         # Escalation / malformed-JSON retry
-  # Two-Pass Architecture Config
-  pass1_model_fulltext: "gemini-3.6-flash"   # Pass 1 (Scoring) if Full Text
-  pass1_thinking_fulltext: "HIGH"            # Thinking level for full-text scoring
-  pass1_model_abstract: "gemini-3.6-flash"   # Pass 1 (Scoring) if Abstract Only
-  pass1_thinking_abstract: "MEDIUM"          # Thinking level for abstract scoring
-  pass2_model: "gemini-3.6-flash"            # Pass 2 (Methods extraction)
-  pass2_thinking: "HIGH"                     # Thinking level for methods extraction
-  pass2_min_score: 88                 # Trigger threshold for Pass 2 (score >= 88)
+  model_default: "gemini-3.7-flash"          # Base fallback for all tasks
+  thinking_default: "MEDIUM"
 
+  # Task-driven configuration: model and thinking effort per task
+  tasks:
+    pass1_fulltext:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"                       # Full-text scoring & evidence extraction
+    pass1_abstract:
+      model: "gemini-3.7-flash"
+      thinking: "MEDIUM"                     # Abstract-only scoring (cache-optimized)
+    pass2_methods:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"                       # Structured bioinfo methods extraction
+    tier_c_engine:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"                       # 3-stage multimodal figure & story-map engine
+    tier_c_identity:
+      model: "gemini-3.7-flash"
+      thinking: "LOW"                        # Page-1 quick identity & PMID resolution
+    rag_agent:
+      model: "gemini-3.7-flash"
+      thinking: "MEDIUM"                     # Vertex RAG conversational query agent
+    escalation:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"                       # Escalation retry on malformed JSON
+
+  pass2_min_score: 88                 # Trigger threshold for Pass 2 (score >= 88)
   max_chars: 80000
   prompt_template: "tier1_pca"
   escalation_triggers:
@@ -90,7 +107,7 @@ dedup:
 
 tier_c:
   enabled: true
-  model: "gemini-3.6-flash"
+  model: "gemini-3.7-flash"
   thinking: "HIGH"
   min_score: 90                                # auto path: only papers >= this score with a PMC OA PDF
   inbox_folder_id_env: "GOOGLE_DRIVE_TIERC_INBOX_FOLDER_ID"
@@ -99,13 +116,13 @@ tier_c:
   max_size_mb: 18.0
   chunk_pages: 25
   max_chunks: 4
-  identity_model: "gemini-3.6-flash"
+  identity_model: "gemini-3.7-flash"
 
 # --- Vertex RAG corpus sync + NL query agent (agent/cli.py) ---
 # Resource IDs (VERTEX_RAG_CORPUS_NAME, GCP_PROJECT_ID) stay in .env -- they are
 # deployment credentials. Every model / tuning knob is here.
 rag_agent:
-  model: "gemini-3.6-flash"
+  model: "gemini-3.7-flash"
   thinking: "MEDIUM"                  # NONE | LOW | MEDIUM | HIGH
   location: "us-east5"             # Vertex location for LLM inference
   top_k: 10                        # RAG chunks retrieved per question

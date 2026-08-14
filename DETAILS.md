@@ -36,15 +36,34 @@ discovery:
 
 ai:
   provider: gemini
-  # Two-Pass Architecture
-  pass1_model_fulltext: "gemini-3.6-flash"   # Pass 1 (Scoring) if Full Text
-  pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
-  pass1_model_abstract: "gemini-3.6-flash"   # Pass 1 (Scoring) if Abstract Only
-  pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
-  pass2_model: "gemini-3.6-flash"                  # Pass 2 (Methods extraction)
-  pass2_thinking: "LOW"                             # Thinking level for methods extraction
-  pass2_min_score: 88                 # Trigger threshold for Pass 2
+  model_default: "gemini-3.7-flash"
+  thinking_default: "MEDIUM"
 
+  # Task-driven configuration: model & effort per task
+  tasks:
+    pass1_fulltext:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+    pass1_abstract:
+      model: "gemini-3.7-flash"
+      thinking: "MEDIUM"
+    pass2_methods:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+    tier_c_engine:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+    tier_c_identity:
+      model: "gemini-3.7-flash"
+      thinking: "LOW"
+    rag_agent:
+      model: "gemini-3.7-flash"
+      thinking: "MEDIUM"
+    escalation:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+
+  pass2_min_score: 88                 # Trigger threshold for Pass 2
   max_chars: 80000
   prompt_template: "tier1_pca"
 
@@ -100,9 +119,9 @@ graph TD
 
 To maximize Gemini prompt caching (~50% cost reduction):
 
-1. **Abstract-only papers** processed first with `gemini-3.6-flash` (MEDIUM thinking)
-2. **Full-text papers** processed second with `gemini-3.6-flash` (HIGH thinking)
-3. **Pass 2** runs in parallel batch after all Pass 1 completes, using `gemini-3.6-flash` (HIGH thinking)
+1. **Abstract-only papers** processed first with `gemini-3.7-flash` (MEDIUM thinking)
+2. **Full-text papers** processed second with `gemini-3.7-flash` (HIGH thinking)
+3. **Pass 2** runs in parallel batch after all Pass 1 completes, using `gemini-3.7-flash` (HIGH thinking)
 
 ---
 
@@ -189,8 +208,8 @@ class AnalysisStep(BaseModel):
 **Pass 1: Scoring & Metadata** (`enrich_record()`)
 
 - Model selection based on `has_full_text`:
-  - Abstract-only -> `pass1_model_abstract` (`gemini-3.6-flash`, MEDIUM thinking)
-  - Full-text -> `pass1_model_fulltext` (`gemini-3.6-flash`, HIGH thinking)
+  - Abstract-only -> `pass1_model_abstract` (`gemini-3.7-flash`, MEDIUM thinking)
+  - Full-text -> `pass1_model_fulltext` (`gemini-3.7-flash`, HIGH thinking)
 - Returns all metadata fields + `RelevanceScore`
 - Marks papers eligible for Pass 2 via `_pass2_eligible` flag
 

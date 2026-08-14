@@ -237,11 +237,12 @@ def _probe_gemini() -> Dict[str, Any]:
     target = gemini_target()
     if not target["ok"]:
         return {"ok": False, "detail": "not configured"}
+    from litintel.constants import DEFAULT_GEMINI_MODEL
     from litintel.enrich.ai_client import _get_gemini_client
 
     client = _get_gemini_client()
     resp = client.models.generate_content(
-        model="gemini-3.6-flash", contents="Reply with exactly: OK"
+        model=DEFAULT_GEMINI_MODEL, contents="Reply with exactly: OK"
     )
     return {"ok": True, "detail": "generate_content -> %s" % (resp.text or "").strip()[:20]}
 

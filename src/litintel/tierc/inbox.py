@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from googleapiclient.http import MediaIoBaseDownload
 
+from litintel.constants import DEFAULT_GEMINI_MODEL
 from litintel.storage.drive import ensure_folder_exists, upload_tierc_artifact
 from litintel.tierc.engine import run_all_stages
 from litintel.tierc.identity import resolve_identity
@@ -132,7 +133,7 @@ def process_inbox(
     notion_index: Dict[str, str],
     output_folder_id: str,
     engine_model: str,
-    identity_model: str = "gemini-3.6-flash",
+    identity_model: str = DEFAULT_GEMINI_MODEL,
 ) -> List[TierCRecord]:
     """Process every PDF in the Drive inbox.
 

@@ -165,25 +165,33 @@ src/litintel/
 The pipeline uses a cache-optimized two-pass system:
 
 ### Pass 1: Scoring & Metadata
-- **Abstract-only papers** -> `gemini-3.6-flash` with MEDIUM thinking (processed first to maximize cache hits)
-- **Full-text papers** -> `gemini-3.6-flash` with HIGH thinking (processed second, grouped together)
+- **Abstract-only papers** -> `gemini-3.7-flash` with MEDIUM thinking (processed first to maximize cache hits)
+- **Full-text papers** -> `gemini-3.7-flash` with HIGH thinking (processed second, grouped together)
 
 ### Pass 2: Methods Extraction (Batched)
 - Triggers only for papers with **Score >= 88** and full-text availability
-- Uses `gemini-3.6-flash` with HIGH thinking for structured extraction
+- Uses `gemini-3.7-flash` with HIGH thinking for structured extraction
 - Runs in **parallel** (ThreadPoolExecutor, max 3 workers) to keep prompt cache warm
 - Extracts `comp_methods` with structured `analyses` blocks
 
 **Config (`configs/tier1_pca.yaml`):**
 ```yaml
 ai:
-  pass1_model_fulltext: "gemini-3.6-flash"   # Pass 1 if Full Text
-  pass1_thinking_fulltext: "HIGH"                   # Thinking level for full-text scoring
-  pass1_model_abstract: "gemini-3.6-flash"   # Pass 1 if Abstract Only
-  pass1_thinking_abstract: "MEDIUM"                 # Thinking level for abstract scoring
-  pass2_model: "gemini-3.6-flash"                  # Pass 2 (Methods)
-  pass2_thinking: "HIGH"                            # Thinking level for methods extraction
-  pass2_min_score: 88                 # Trigger threshold for Pass 2
+  provider: gemini
+  model_default: "gemini-3.7-flash"
+  thinking_default: "MEDIUM"
+
+  # Task-driven configuration: model & effort per task
+  tasks:
+    pass1_fulltext:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
+    pass1_abstract:
+      model: "gemini-3.7-flash"
+      thinking: "MEDIUM"
+    pass2_methods:
+      model: "gemini-3.7-flash"
+      thinking: "HIGH"
 ```
 
 These YAML values are authoritative -- there are no environment-variable overrides.
